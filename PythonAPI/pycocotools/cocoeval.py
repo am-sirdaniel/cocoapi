@@ -337,9 +337,11 @@ class COCOeval:
         dtIg = np.logical_or(dtIg, np.logical_and(dtm==0, np.repeat(a,T,0)))
 
 
-        print('last gt', gt[0])
-        print('last dt', dt[0])
-
+        print('last gt sample', gt[0])
+        print('last dt sample', dt[0])
+        print()
+        print('last gt shape', torch.Tensor(list(map(lambda x:x['pose_3d'], gt))).shape)
+        print('last dt shape', torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt))).shape)
 
         # store results for given image and category
         return {
