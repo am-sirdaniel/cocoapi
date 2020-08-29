@@ -6,12 +6,7 @@ import time
 from collections import defaultdict
 from . import mask as maskUtils
 import copy
-import torch
 
-_PCK_SCORE = 0
-_BEST_3D_PRED_POSES = []
-
-print('***************UPDATING cocoeval.p works now *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
@@ -83,7 +78,6 @@ class COCOeval:
         self._paramsEval = {}               # parameters for evaluation
         self.stats = []                     # result summarization
         self.ious = {}                      # ious between all gts and dts
-        self.gt_cnt = 0
         if not cocoGt is None:
             self.params.imgIds = sorted(cocoGt.getImgIds())
             self.params.catIds = sorted(cocoGt.getCatIds())
@@ -107,20 +101,6 @@ class COCOeval:
             gts=self.cocoGt.loadAnns(self.cocoGt.getAnnIds(imgIds=p.imgIds))
             dts=self.cocoDt.loadAnns(self.cocoDt.getAnnIds(imgIds=p.imgIds))
 
-        print('before prepare phase')
-
-        pose3d_gt = list(map(lambda x:x['pose_3d'], gts))
-        pose3d_dt = list(map(lambda x:x['pred_3d_pts'], dts))
-
-        print('cocoeval pose3d_gt shape', torch.Tensor(pose3d_gt).shape)
-        print('cocoeval pose3d_gt sample', torch.Tensor(pose3d_gt)[0])
-
-        print('cocoeval pose3d_dt shape', torch.Tensor(pose3d_dt).shape)
-        print('cocoeval pose3d_dt sample', torch.Tensor(pose3d_dt)[0])
-
-        self.gt_cnt = len(pose3d_gt)
-
-
         # convert ground truth to mask if iouType == 'segm'
         if p.iouType == 'segm':
             _toMask(gts, self.cocoGt)
@@ -137,11 +117,6 @@ class COCOeval:
             self._gts[gt['image_id'], gt['category_id']].append(gt)
         for dt in dts:
             self._dts[dt['image_id'], dt['category_id']].append(dt)
-
-
-        print('len gt ', len(self._gts[gt['image_id'], gt['category_id']]))
-        print('len dt ', len(self._dts[dt['image_id'], dt['category_id']]))
-
         self.evalImgs = defaultdict(list)   # per-image per-category evaluation results
         self.eval     = {}                  # accumulated evaluation results
 
@@ -165,12 +140,6 @@ class COCOeval:
         self.params=p
 
         self._prepare()
-
-
-        print('after prepare phase')
-        print('cocoeval gts', self._gts, dir(self._gts))
-        print('cocoeval dts', self._dts, dir(self._gts))
-
         # loop through images, area range, max detection number
         catIds = p.catIds if p.useCats else [-1]
 
@@ -190,7 +159,6 @@ class COCOeval:
                  for imgId in p.imgIds
              ]
         self._paramsEval = copy.deepcopy(self.params)
-
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format(toc-tic))
 
@@ -267,25 +235,8 @@ class COCOeval:
                 if k1 > 0:
                     e=e[vg > 0]
                 ious[i, j] = np.sum(np.exp(-e)) / e.shape[0]
-        print(ious)
-        print('min iou, max iou', np.min(ious), np.max(ious))
+        #print(ious)
         return ious
-
-    def pck(target, pred, treshold=0.1):
-        '''
-        Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm)
-
-        Arguments:
-        target: A tensor of shape (1, 18) : normalized values relative to hip
-        pred: A tensor of shape (1, 18) : normalized values relative to hip
-
-        Returns:
-            pck_score: A scalar value btw 0 and 1
-        '''
-        diff = torch.abs(target - pred)
-        count = torch.sum(diff < treshold, dtype=torch.float)
-        pck_score = count/target.shape[1]
-        return pck_score
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
         '''
@@ -296,17 +247,9 @@ class COCOeval:
         if p.useCats:
             gt = self._gts[imgId,catId]
             dt = self._dts[imgId,catId]
-
-            # print('evaluateImg gt', gt)
-            # print('evaluateImg dt', dt)
-
         else:
             gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId,cId]]
-
-            # print('evaluateImg gt', gt)
-            # print('evaluateImg dt', dt)
-
         if len(gt) == 0 and len(dt) ==0:
             return None
 
@@ -357,54 +300,9 @@ class COCOeval:
                     dtIg[tind,dind] = gtIg[m]
                     dtm[tind,dind]  = gt[m]['id']
                     gtm[tind,m]     = d['id']
-        
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area']<aRng[0] or d['area']>aRng[1] for d in dt]).reshape((1, len(dt)))
         dtIg = np.logical_or(dtIg, np.logical_and(dtm==0, np.repeat(a,T,0)))
-
-
-
-        ############ 3D Evaluation ###############################
-        GT  = torch.Tensor(list(map(lambda x:x['pose_3d'], gt)))
-        DT  = torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt)))
-
-        GT = GT.view(GT.shape[0], -1) #1,18
-
-        #Normalize 3d GT by mean-std relative to the hip
-        mean_3d, std_3d = (torch.Tensor([   90.4226,   -99.0404,   113.7033,   -90.4226,    99.0404,  -113.7033,
-            -1257.6155, -1297.9100, -1227.4360, -1220.5818, -1329.1154, -1301.5215,
-              797.3640,   756.3050,   403.3004,   410.9879,   -14.6912,    16.2920]).cuda(),
-        torch.Tensor([ 15.5230,  19.4742,  25.6194,  15.5230,  19.4742,  25.6194, 183.8460,
-            172.6190, 212.3050, 218.0117, 192.0247, 208.0867, 178.1015, 186.4496,
-            160.7282, 160.8192, 163.5823, 152.6740]).cuda())
-
-        GT = (GT - mean_3d)/std_3d
-        print('normalized 3d GT sample in Evaluation: ', GT[0:5])
-
-        print('last gt sample', GT[0])
-        print('last dt sample', DT[0])
-        print()
-        print('last gt shape', GT.shape)
-        print('last dt shape', DT.shape)
-
-
-        best_score = float('-inf')
-        for dt in DT:
-            score = pck(GT, dt)
-            if score > best_score:
-                best_score = score
-                best_pred = dt
-
-        print('best PCK score in {} instances'.format(len(DT)), best_score)
-        
-        global _PCK_SCORE, _BEST_3D_PRED_POSES
-        _PCK_SCORE += best_score
-        _BEST_3D_PRED_POSES.append(best_pred)
-        #print('Remember to divide the final _PCK_SCORE by the total no val/test images', _PCK_SCORE)
-
-
-
-
         # store results for given image and category
         return {
                 'image_id':     imgId,
@@ -439,9 +337,6 @@ class COCOeval:
         K           = len(p.catIds) if p.useCats else 1
         A           = len(p.areaRng)
         M           = len(p.maxDets)
-
-        print('T, R, K,A, M', T, R, K,A, M)
-
         precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
         recall      = -np.ones((T,K,A,M))
         scores      = -np.ones((T,R,K,A,M))
@@ -593,14 +488,7 @@ class COCOeval:
             stats[7] = _summarize(0, maxDets=20, iouThr=.75)
             stats[8] = _summarize(0, maxDets=20, areaRng='medium')
             stats[9] = _summarize(0, maxDets=20, areaRng='large')
-
-            #3D Evaluation Final Score
-            global _PCK_SCORE, _BEST_3D_PRED_POSES
-            print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _PCK_SCORE/self.gt_cnt))
-            print('First 5 ', _BEST_3D_PRED_POSES[0:5])
-
             return stats
-
         if not self.eval:
             raise Exception('Please run accumulate() first')
         iouType = self.params.iouType
@@ -621,11 +509,8 @@ class Params:
         self.imgIds = []
         self.catIds = []
         # np.arange causes trouble.  the data point on arange is slightly larger than the true value
-        # self.iouThrs = np.linspace(.5, 0.95, np.round((0.95 - .5) / .05) + 1, endpoint=True)
-        # self.recThrs = np.linspace(.0, 1.00, np.round((1.00 - .0) / .01) + 1, endpoint=True)
-
-        self.iouThrs = np.linspace(.5, 0.95, int((0.95 - .5) / .05) + 1, endpoint=True)
-        self.recThrs = np.linspace(.0, 1.00, int((1.00 - .0) / .01) + 1, endpoint=True)
+        self.iouThrs = np.linspace(.5, 0.95, np.round((0.95 - .5) / .05) + 1, endpoint=True)
+        self.recThrs = np.linspace(.0, 1.00, np.round((1.00 - .0) / .01) + 1, endpoint=True)
         self.maxDets = [1, 10, 100]
         self.areaRng = [[0 ** 2, 1e5 ** 2], [0 ** 2, 32 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
         self.areaRngLbl = ['all', 'small', 'medium', 'large']
@@ -635,11 +520,8 @@ class Params:
         self.imgIds = []
         self.catIds = []
         # np.arange causes trouble.  the data point on arange is slightly larger than the true value
-        # self.iouThrs = np.linspace(.5, 0.95, np.round((0.95 - .5) / .05) + 1, endpoint=True)
-        # self.recThrs = np.linspace(.0, 1.00, np.round((1.00 - .0) / .01) + 1, endpoint=True)
-
-        self.iouThrs = np.linspace(.5, 0.95, int((0.95 - .5) / .05) + 1, endpoint=True)
-        self.recThrs = np.linspace(.0, 1.00, int((1.00 - .0) / .01) + 1, endpoint=True)
+        self.iouThrs = np.linspace(.5, 0.95, np.round((0.95 - .5) / .05) + 1, endpoint=True)
+        self.recThrs = np.linspace(.0, 1.00, np.round((1.00 - .0) / .01) + 1, endpoint=True)
         self.maxDets = [20]
         self.areaRng = [[0 ** 2, 1e5 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
         self.areaRngLbl = ['all', 'medium', 'large']
