@@ -102,8 +102,15 @@ class COCOeval:
             dts=self.cocoDt.loadAnns(self.cocoDt.getAnnIds(imgIds=p.imgIds))
 
         print('before prepare phase')
-        print('cocoeval gts', gts[0:5])
-        print('cocoeval dts', dts[0:5])
+
+        pose3d_gt = list(map(lambda x:x['pose_3d'], gts))
+        pose3d_dt = list(map(lambda x:x['pred_3d_pts'], dts))
+
+        print('cocoeval pose3d_gt shape', torch.Tensor(pose3d_gt).shape)
+        print('cocoeval pose3d_gt sample', torch.Tensor(pose3d_gt)[0])
+
+        print('cocoeval pose3d_dt shape', torch.Tensor(pose3d_dt).shape)
+        print('cocoeval pose3d_dt sample', torch.Tensor(pose3d_dt)[0])
 
         # convert ground truth to mask if iouType == 'segm'
         if p.iouType == 'segm':
