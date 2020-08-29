@@ -1,4 +1,3 @@
-
 __author__ = 'tsungyi'
 
 import numpy as np
@@ -7,8 +6,6 @@ import time
 from collections import defaultdict
 from . import mask as maskUtils
 import copy
-
-print('============ Using original/official CoCo evaluation script =============')
 
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
@@ -104,7 +101,7 @@ class COCOeval:
             gts=self.cocoGt.loadAnns(self.cocoGt.getAnnIds(imgIds=p.imgIds))
             dts=self.cocoDt.loadAnns(self.cocoDt.getAnnIds(imgIds=p.imgIds))
 
-
+        print('before prepare phase')
         print('cocoeval gts', gts[0:5])
         print('cocoeval dts', dts[0:5])
 
@@ -147,6 +144,12 @@ class COCOeval:
         self.params=p
 
         self._prepare()
+
+
+        print('after prepare phase')
+        print('cocoeval gts', gts[0:5])
+        print('cocoeval dts', dts[0:5])
+
         # loop through images, area range, max detection number
         catIds = p.catIds if p.useCats else [-1]
 
