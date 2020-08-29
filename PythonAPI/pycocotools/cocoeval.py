@@ -130,6 +130,11 @@ class COCOeval:
             self._gts[gt['image_id'], gt['category_id']].append(gt)
         for dt in dts:
             self._dts[dt['image_id'], dt['category_id']].append(dt)
+
+
+        print('len gt ', len(self._gts[gt['image_id'], gt['category_id']]))
+        print('len dt ', len(self._dts[dt['image_id'], dt['category_id']]))
+
         self.evalImgs = defaultdict(list)   # per-image per-category evaluation results
         self.eval     = {}                  # accumulated evaluation results
 
@@ -156,8 +161,8 @@ class COCOeval:
 
 
         print('after prepare phase')
-        print('cocoeval gts', self._gts[0:5])
-        print('cocoeval dts', self._dts[0:5])
+        print('cocoeval gts', self._gts[gt['image_id'], gt['category_id']][0:5])
+        print('cocoeval dts', self._dts[dt['image_id'], dt['category_id']][0:5])
 
         # loop through images, area range, max detection number
         catIds = p.catIds if p.useCats else [-1]
