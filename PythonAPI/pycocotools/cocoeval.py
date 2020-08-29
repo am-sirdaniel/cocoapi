@@ -161,8 +161,8 @@ class COCOeval:
 
 
         print('after prepare phase')
-        print('cocoeval gts', self._gts[gt['image_id'], gt['category_id']][0:5])
-        print('cocoeval dts', self._dts[dt['image_id'], dt['category_id']][0:5])
+        print('cocoeval gts', self._gts, dir(self._gts))
+        print('cocoeval dts', self._dts, dir(self._gts))
 
         # loop through images, area range, max detection number
         catIds = p.catIds if p.useCats else [-1]
@@ -271,9 +271,17 @@ class COCOeval:
         if p.useCats:
             gt = self._gts[imgId,catId]
             dt = self._dts[imgId,catId]
+
+            print('evaluateImg gt', gt)
+            print('evaluateImg dt', dt)
+
         else:
             gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId,cId]]
+
+            print('evaluateImg gt', gt)
+            print('evaluateImg dt', dt)
+
         if len(gt) == 0 and len(dt) ==0:
             return None
 
@@ -327,6 +335,12 @@ class COCOeval:
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area']<aRng[0] or d['area']>aRng[1] for d in dt]).reshape((1, len(dt)))
         dtIg = np.logical_or(dtIg, np.logical_and(dtm==0, np.repeat(a,T,0)))
+
+
+        print('last gt', gt[0])
+        print('last dt', dt[0])
+
+
         # store results for given image and category
         return {
                 'image_id':     imgId,
