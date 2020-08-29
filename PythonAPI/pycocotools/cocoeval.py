@@ -344,6 +344,15 @@ class COCOeval:
         GT  = torch.Tensor(list(map(lambda x:x['pose_3d'], gt)))
         DT  = torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt)))
 
+        #Normalize relative to the hip
+        print('GT shape', GT.shape)
+        GT = GT.view(GT.shape[0], 6,3) #1,6,3
+        midhip = (GT[:,0] + GT[:,1])/2
+
+        print('GT shape, midhip shape', GT.shape, midhip.unsqueeze(1).shape)
+        GT = GT - midhip.unsqueeze(1)
+        #GT = GT.view(GT.shape[0], -1)
+
         GT = GT.view(GT.shape[0], -1) #1,18
 
         #Normalize 3d GT by mean-std relative to the hip
