@@ -7,6 +7,7 @@ from collections import defaultdict
 from . import mask as maskUtils
 import copy
 
+print('***************UPDATING cocoeval.p works now *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
@@ -154,8 +155,8 @@ class COCOeval:
 
 
         print('after prepare phase')
-        print('cocoeval gts', gts[0:5])
-        print('cocoeval dts', dts[0:5])
+        print('cocoeval gts', self._gts[0:5])
+        print('cocoeval dts', self._dts[0:5])
 
         # loop through images, area range, max detection number
         catIds = p.catIds if p.useCats else [-1]
