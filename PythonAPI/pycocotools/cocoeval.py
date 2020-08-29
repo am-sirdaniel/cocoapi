@@ -365,11 +365,11 @@ class COCOeval:
 
 
         best_score = float('-inf')
-        for dt in DT:
-            score = self.pck(GT, dt)
+        for dt_ in DT:
+            score = self.pck(GT, dt_)
             if score > best_score:
                 best_score = score
-                best_pred = dt
+                best_pred = dt_
 
         print('best PCK score in {} instances'.format(len(DT)), best_score)
         
