@@ -597,7 +597,7 @@ class COCOeval:
             #3D Evaluation Final Score
             global _PCK_SCORE, _BEST_3D_PRED_POSES
             print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _PCK_SCORE/self.gt_cnt))
-            print('First 5 ': _BEST_3D_PRED_POSES[0:5])
+            print('First 5 ', _BEST_3D_PRED_POSES[0:5])
 
             return stats
 
