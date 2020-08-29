@@ -6,6 +6,7 @@ import time
 from collections import defaultdict
 from . import mask as maskUtils
 import copy
+import torch
 
 print('***************UPDATING cocoeval.p works now *****************')
 class COCOeval:
