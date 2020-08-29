@@ -259,8 +259,10 @@ class COCOeval:
                 if k1 > 0:
                     e=e[vg > 0]
                 ious[i, j] = np.sum(np.exp(-e)) / e.shape[0]
-        #print(ious)
+        print(ious)
+        print('min iou, max iou', np.min(ious), np.max(ious))
         return ious
+
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
         '''
@@ -332,6 +334,7 @@ class COCOeval:
                     dtIg[tind,dind] = gtIg[m]
                     dtm[tind,dind]  = gt[m]['id']
                     gtm[tind,m]     = d['id']
+        
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area']<aRng[0] or d['area']>aRng[1] for d in dt]).reshape((1, len(dt)))
         dtIg = np.logical_or(dtIg, np.logical_and(dtm==0, np.repeat(a,T,0)))
