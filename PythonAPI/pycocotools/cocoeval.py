@@ -8,6 +8,9 @@ from . import mask as maskUtils
 import copy
 import torch
 
+_PCK_SCORE = 0
+_BEST_3D_PRED_POSES = []
+
 print('***************UPDATING cocoeval.p works now *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
@@ -80,6 +83,7 @@ class COCOeval:
         self._paramsEval = {}               # parameters for evaluation
         self.stats = []                     # result summarization
         self.ious = {}                      # ious between all gts and dts
+        self.gt_cnt = 0
         if not cocoGt is None:
             self.params.imgIds = sorted(cocoGt.getImgIds())
             self.params.catIds = sorted(cocoGt.getCatIds())
@@ -113,6 +117,9 @@ class COCOeval:
 
         print('cocoeval pose3d_dt shape', torch.Tensor(pose3d_dt).shape)
         print('cocoeval pose3d_dt sample', torch.Tensor(pose3d_dt)[0])
+
+        self.gt_cnt = len(pose3d_gt)
+
 
         # convert ground truth to mask if iouType == 'segm'
         if p.iouType == 'segm':
@@ -183,6 +190,7 @@ class COCOeval:
                  for imgId in p.imgIds
              ]
         self._paramsEval = copy.deepcopy(self.params)
+
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format(toc-tic))
 
@@ -263,6 +271,21 @@ class COCOeval:
         print('min iou, max iou', np.min(ious), np.max(ious))
         return ious
 
+    def pck(target, pred, treshold=0.1):
+        '''
+        Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm)
+
+        Arguments:
+        target: A tensor of shape (1, 18) : normalized values relative to hip
+        pred: A tensor of shape (1, 18) : normalized values relative to hip
+
+        Returns:
+            pck_score: A scalar value btw 0 and 1
+        '''
+        diff = torch.abs(target - pred)
+        count = torch.sum(diff < treshold, dtype=torch.float)
+        pck_score = count/target.shape[1]
+        return pck_score
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
         '''
@@ -274,15 +297,15 @@ class COCOeval:
             gt = self._gts[imgId,catId]
             dt = self._dts[imgId,catId]
 
-            print('evaluateImg gt', gt)
-            print('evaluateImg dt', dt)
+            # print('evaluateImg gt', gt)
+            # print('evaluateImg dt', dt)
 
         else:
             gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
             dt = [_ for cId in p.catIds for _ in self._dts[imgId,cId]]
 
-            print('evaluateImg gt', gt)
-            print('evaluateImg dt', dt)
+            # print('evaluateImg gt', gt)
+            # print('evaluateImg dt', dt)
 
         if len(gt) == 0 and len(dt) ==0:
             return None
@@ -340,11 +363,47 @@ class COCOeval:
         dtIg = np.logical_or(dtIg, np.logical_and(dtm==0, np.repeat(a,T,0)))
 
 
-        print('last gt sample', gt[0])
-        print('last dt sample', dt[0])
+
+        ############ 3D Evaluation ###############################
+        GT  = torch.Tensor(list(map(lambda x:x['pose_3d'], gt)))
+        DT  = torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt)))
+
+        GT = GT.view(GT.shape[0], -1) #1,18
+
+        #Normalize 3d GT by mean-std relative to the hip
+        mean_3d, std_3d = (torch.Tensor([   90.4226,   -99.0404,   113.7033,   -90.4226,    99.0404,  -113.7033,
+            -1257.6155, -1297.9100, -1227.4360, -1220.5818, -1329.1154, -1301.5215,
+              797.3640,   756.3050,   403.3004,   410.9879,   -14.6912,    16.2920]).cuda(),
+        torch.Tensor([ 15.5230,  19.4742,  25.6194,  15.5230,  19.4742,  25.6194, 183.8460,
+            172.6190, 212.3050, 218.0117, 192.0247, 208.0867, 178.1015, 186.4496,
+            160.7282, 160.8192, 163.5823, 152.6740]).cuda())
+
+        GT = (GT - mean_3d)/std_3d
+        print('normalized 3d GT sample in Evaluation: ', GT[0:5])
+
+        print('last gt sample', GT[0])
+        print('last dt sample', DT[0])
         print()
-        print('last gt shape', torch.Tensor(list(map(lambda x:x['pose_3d'], gt))).shape)
-        print('last dt shape', torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt))).shape)
+        print('last gt shape', GT.shape)
+        print('last dt shape', DT.shape)
+
+
+        best_score = float('-inf')
+        for dt in DT:
+            score = pck(GT, dt)
+            if score > best_score:
+                best_score = score
+                best_pred = dt
+
+        print('best PCK score in {} instances'.format(len(DT)), best_score)
+        
+        global _PCK_SCORE, _BEST_3D_PRED_POSES
+        _PCK_SCORE += best_score
+        _BEST_3D_PRED_POSES.append(best_pred)
+        #print('Remember to divide the final _PCK_SCORE by the total no val/test images', _PCK_SCORE)
+
+
+
 
         # store results for given image and category
         return {
@@ -534,7 +593,14 @@ class COCOeval:
             stats[7] = _summarize(0, maxDets=20, iouThr=.75)
             stats[8] = _summarize(0, maxDets=20, areaRng='medium')
             stats[9] = _summarize(0, maxDets=20, areaRng='large')
+
+            #3D Evaluation Final Score
+            global _PCK_SCORE, _BEST_3D_PRED_POSES
+            print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _PCK_SCORE/self.gt_cnt))
+            print('First 5 ': _BEST_3D_PRED_POSES[0:5])
+
             return stats
+
         if not self.eval:
             raise Exception('Please run accumulate() first')
         iouType = self.params.iouType
