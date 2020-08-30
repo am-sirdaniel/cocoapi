@@ -374,15 +374,16 @@ class COCOeval:
 
 
         best_score = float('-inf')
-        all_nan = torch.isnan(GT)
+        #all_nan = torch.isnan(GT)
 
         for i, dt_ in enumerate(DT):
 
             #consider only valid
             
             score = self.pck(GT, dt_)
-            loss = torch.nn.functional.mse_loss(dt_[~all_nan], GT[~all_nan])
-            
+            #loss = torch.nn.functional.mse_loss(dt_[~all_nan], GT[~all_nan])
+            loss = torch.nn.functional.mse_loss(dt_, GT)
+
             print(i, 'pck score', score)
             print(i, 'loss', loss)
             if score > best_score:
