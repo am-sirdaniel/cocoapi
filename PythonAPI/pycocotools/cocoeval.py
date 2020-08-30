@@ -11,7 +11,7 @@ import torch
 _PCK_SCORE = 0
 _BEST_3D_PRED_POSES = []
 
-print('***************UPDATING cocoeval.p works now YESSSS*****************')
+print('***************UPDATING cocoeval.p works now *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
