@@ -390,7 +390,7 @@ class COCOeval:
             except:
                 pass
 
-            score = self.pck(GT, dt_)
+            score = self.pck(GT, dt_.view(1,-1))
             #loss = torch.nn.functional.mse_loss(dt_[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
 
