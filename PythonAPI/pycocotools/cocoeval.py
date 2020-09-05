@@ -383,7 +383,13 @@ class COCOeval:
             dt_ = torch.Tensor(dt_)
 
             #consider only valid
-            print('GT type, dt type', type(GT), type(dt))
+            print('GT type, dt type', type(GT), type(dt_), dt_.shape)
+            print('dt_', dt_[0])
+            try:
+                print('dt_', dt_[0][0:5])
+            except:
+                pass
+
             score = self.pck(GT, dt_)
             #loss = torch.nn.functional.mse_loss(dt_[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
