@@ -382,7 +382,7 @@ class COCOeval:
             dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
 
             #consider only valid
-            
+            print('GT type, dt type', type(GT), type(dt))
             score = self.pck(GT, dt_)
             #loss = torch.nn.functional.mse_loss(dt_[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
