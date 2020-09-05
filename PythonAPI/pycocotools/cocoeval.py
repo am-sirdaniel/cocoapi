@@ -257,7 +257,7 @@ class COCOeval:
         #print(ious)
         return ious
 
-    def pck(target, pred, treshold=10):
+    def pck(self, target, pred, treshold=10):
         '''
         Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm)
 
@@ -380,17 +380,17 @@ class COCOeval:
 
         for i, dt_ in enumerate(DT):
             dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
-            dt_ = torch.Tensor(dt_)
+            dt_ = torch.Tensor(dt_).view(1,-1)
 
             #consider only valid
-            print('GT type, dt type', type(GT), type(dt_), dt_.shape)
-            print('dt_', dt_[0])
+            print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_), GT.shape, dt_.shape)
+            #print('dt_', dt_[0])
             try:
                 print('dt_', dt_[0][0:5])
             except:
                 pass
 
-            score = self.pck(GT, dt_.view(1,-1))
+            score = self.pck(GT, dt_)
             #loss = torch.nn.functional.mse_loss(dt_[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
 
