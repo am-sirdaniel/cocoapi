@@ -257,7 +257,7 @@ class COCOeval:
         #print(ious)
         return ious
 
-    def pck(self,target, pred, treshold=0.1):
+    def pck(target, pred, treshold=10):
         '''
         Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm)
 
@@ -270,8 +270,9 @@ class COCOeval:
         '''
         diff = torch.abs(target - pred)
         count = torch.sum(diff < treshold, dtype=torch.float)
-        pck_score = count/target.shape[1]
+        pck_score = count/ (target.shape[0]*target.shape[1])
         return pck_score
+
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
         '''
@@ -364,8 +365,8 @@ class COCOeval:
             172.6190, 212.3050, 218.0117, 192.0247, 208.0867, 178.1015, 186.4496,
             160.7282, 160.8192, 163.5823, 152.6740]))
 
-        GT = (GT - mean_3d)/std_3d
-        print('normalized 3d GT sample in Evaluation: ', GT[0:5])
+        
+        print('Global 3d GT sample in Evaluation: ', GT[0:5])
 
         print('last gt sample', GT[0])
         print('last dt sample', DT[0])
@@ -378,6 +379,7 @@ class COCOeval:
         #all_nan = torch.isnan(GT)
 
         for i, dt_ in enumerate(DT):
+            dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
 
             #consider only valid
             
