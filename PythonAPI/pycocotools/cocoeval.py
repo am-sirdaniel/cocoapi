@@ -380,6 +380,7 @@ class COCOeval:
 
         for i, dt_ in enumerate(DT):
             dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
+            dt_ = torch.Tensor(dt_)
 
             #consider only valid
             print('GT type, dt type', type(GT), type(dt))
