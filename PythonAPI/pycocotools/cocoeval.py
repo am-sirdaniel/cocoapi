@@ -259,11 +259,11 @@ class COCOeval:
 
     def pck(self, target, pred, treshold=100):
         '''
-        Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm)
+        Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm/100mm)
 
         Arguments:
-        target: A tensor of shape (1, 18) : normalized values relative to hip
-        pred: A tensor of shape (1, 18) : normalized values relative to hip
+        target: A tensor of shape (1, 18) : global values relative to hip in our case
+        pred: A tensor of shape (1, 18) : global values relative to hip in our case
 
         Returns:
             pck_score: A scalar value btw 0 and 1
@@ -273,6 +273,19 @@ class COCOeval:
         pck_score = count/ (target.shape[0]*target.shape[1])
         return pck_score
 
+    def mpjpe_error(target, pred):
+         '''
+        MPJPE ERROR
+
+        Arguments:
+        target: A tensor of shape (3, 6) : global values relative to hip in our case
+        pred: A tensor of shape (3, 6) : global values relative to hip in our case
+
+        Returns:
+            mpjpe_erro: A scalar value
+        '''
+        error = sum(((out-inps)**2).sum(dim=0).sqrt())/inps.shape[1]
+        return error
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
         '''
@@ -384,18 +397,18 @@ class COCOeval:
 
             #consider only valid
             print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
-            #print('dt_g', dt_g[0])
-            try:
-                print('dt_gg', dt_gg[0][0:5])
-            except:
-                pass
 
             score = self.pck(GT, dt_g)
             #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
 
+            target = GT.view(3,6); pred = dt_.view(3,6)
+            error = mpjpe_error(target, pred)
+
             print(i, 'pck score on global', score)
             print(i, 'loss on norm', loss)
+            print(i, 'mpjpe error', error)
+            
             if score > best_score:
                 best_score = score
                 best_pred = dt_g
