@@ -274,7 +274,7 @@ class COCOeval:
         pck_score = count/ (target.shape[0]*target.shape[1])
         return pck_score
 
-    def mpjpe_error(self, target, pred):
+    def mpjpe_error(self, inps, out):
         '''
         MPJPE ERROR
 
