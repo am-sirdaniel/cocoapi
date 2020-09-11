@@ -416,7 +416,7 @@ class COCOeval:
 
         print('best PCK score in {} instances'.format(len(DT)), best_score)
         
-        global _F_PCK_SCORE, _BEST_3D_PRED_POSES
+        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt
         _F_PCK_SCORE += best_score
         _BEST_3D_PRED_POSES.append(best_pred)
         cnt+=1
@@ -557,7 +557,7 @@ class COCOeval:
         '''
         
         #3D Evaluation Final Score
-        global _F_PCK_SCORE, _BEST_3D_PRED_POSES
+        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt
         print('_F_PCK_SCORE', _F_PCK_SCORE)
         print('cnt', cnt)
 
