@@ -275,7 +275,7 @@ class COCOeval:
         return pck_score
 
     def mpjpe_error(target, pred):
-         '''
+        '''
         MPJPE ERROR
 
         Arguments:
