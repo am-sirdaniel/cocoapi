@@ -274,7 +274,7 @@ class COCOeval:
         pck_score = count/ (target.shape[0]*target.shape[1])
         return pck_score
 
-    def mpjpe_error(target, pred):
+    def mpjpe_error(self, target, pred):
         '''
         MPJPE ERROR
 
@@ -404,7 +404,7 @@ class COCOeval:
             loss = torch.nn.functional.mse_loss(dt_, GT)
 
             target = GT.view(3,6); pred = dt_.view(3,6)
-            error = mpjpe_error(target, pred)
+            error = self.mpjpe_error(target, pred)
 
             print(i, 'pck score on global', score)
             print(i, 'loss on norm', loss)
