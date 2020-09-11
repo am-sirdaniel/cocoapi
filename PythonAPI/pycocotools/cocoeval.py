@@ -393,6 +393,8 @@ class COCOeval:
         best_score = float('-inf')
         #all_nan = torch.isnan(GT)
 
+        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
+
         for i, dt_ in enumerate(DT):
             dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
             dt_g = torch.Tensor(dt_).view(1,-1)
@@ -418,8 +420,7 @@ class COCOeval:
                 best_pred = dt_g
 
         print('best PCK score in {} instances'.format(len(DT)), best_score)
-        
-        #global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
+
         _F_PCK_SCORE += best_score
         _BEST_3D_PRED_POSES.append(best_pred)
         cnt+=1
@@ -560,7 +561,7 @@ class COCOeval:
         '''
         
         #3D Evaluation Final Score
-        #global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt
+        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
         print('_F_PCK_SCORE', _F_PCK_SCORE)
         print('cnt', cnt)
         print('all_cnt', all_cnt)
