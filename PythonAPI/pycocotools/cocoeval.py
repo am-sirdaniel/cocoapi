@@ -257,7 +257,7 @@ class COCOeval:
         #print(ious)
         return ious
 
-    def pck(self, target, pred, treshold=10):
+    def pck(self, target, pred, treshold=100):
         '''
         Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm)
 
@@ -380,25 +380,25 @@ class COCOeval:
 
         for i, dt_ in enumerate(DT):
             dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
-            dt_ = torch.Tensor(dt_).view(1,-1)
+            dt_g = torch.Tensor(dt_).view(1,-1)
 
             #consider only valid
-            print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_), GT.shape, dt_.shape)
-            #print('dt_', dt_[0])
+            print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
+            #print('dt_g', dt_g[0])
             try:
-                print('dt_', dt_[0][0:5])
+                print('dt_gg', dt_gg[0][0:5])
             except:
                 pass
 
-            score = self.pck(GT, dt_)
-            #loss = torch.nn.functional.mse_loss(dt_[~all_nan], GT[~all_nan])
+            score = self.pck(GT, dt_g)
+            #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
 
-            print(i, 'pck score', score)
-            print(i, 'loss', loss)
+            print(i, 'pck score on global', score)
+            print(i, 'loss on norm', loss)
             if score > best_score:
                 best_score = score
-                best_pred = dt_
+                best_pred = dt_g
 
         print('best PCK score in {} instances'.format(len(DT)), best_score)
         
