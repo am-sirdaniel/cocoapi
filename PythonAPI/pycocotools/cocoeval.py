@@ -8,8 +8,9 @@ from . import mask as maskUtils
 import copy
 import torch
 
-_PCK_SCORE = 0
+_F_PCK_SCORE = 0
 _BEST_3D_PRED_POSES = []
+cnt = 0
 
 print('***************UPDATING cocoeval.p works now *****************')
 class COCOeval:
@@ -408,17 +409,19 @@ class COCOeval:
             print(i, 'pck score on global', score)
             print(i, 'loss on norm', loss)
             print(i, 'mpjpe error', error)
-            
+
             if score > best_score:
                 best_score = score
                 best_pred = dt_g
 
         print('best PCK score in {} instances'.format(len(DT)), best_score)
         
-        global _PCK_SCORE, _BEST_3D_PRED_POSES
-        _PCK_SCORE += best_score
+        global _F_PCK_SCORE, _BEST_3D_PRED_POSES
+        _F_PCK_SCORE += best_score
         _BEST_3D_PRED_POSES.append(best_pred)
-        #print('Remember to divide the final _PCK_SCORE by the total no val/test images', _PCK_SCORE)
+        cnt+=1
+
+        #print('Remember to divide the final _F_PCK_SCORE by the total no val/test images', _F_PCK_SCORE)
 
 
         # store results for given image and category
@@ -554,8 +557,12 @@ class COCOeval:
         '''
         
         #3D Evaluation Final Score
-        global _PCK_SCORE, _BEST_3D_PRED_POSES
-        print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _PCK_SCORE/self.gt_cnt))
+        global _F_PCK_SCORE, _BEST_3D_PRED_POSES
+        print('_F_PCK_SCORE', _F_PCK_SCORE)
+        print('cnt', cnt)
+
+        print('tweaked final score', _F_PCK_SCORE/cnt)
+        print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
         print('First 5 ', _BEST_3D_PRED_POSES[0:5])
 
         def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
