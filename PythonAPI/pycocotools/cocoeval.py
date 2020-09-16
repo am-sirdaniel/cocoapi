@@ -363,11 +363,11 @@ class COCOeval:
         print('GT 3d shape', GT.shape)
         print('DT 3d shape', DT.shape)
 
-        print(dt[0])
         print(gt[0])
+        print(dt[0])
 
-        GT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], gt)))
-        DT_2d  = torch.Tensor(list(map(lambda x:x['pred_keypoints'], dt)))                
+        GT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], gt))) #(x,y, visibility)
+        DT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], dt))) #(x,y,score)             
         print('GT 2d shape', GT_2d.shape)
         print('DT 2d shape', DT_2d.shape)
 
