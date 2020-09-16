@@ -13,7 +13,7 @@ _BEST_3D_PRED_POSES = []
 all_cnt = 0
 cnt = 0
 
-print('***************UPDATING cocoeval.p works now *****************')
+print('*************** Pycoco cocoeval script *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
@@ -360,9 +360,17 @@ class COCOeval:
         print('performing 3D Evaluation')
         GT  = torch.Tensor(list(map(lambda x:x['pose_3d'], gt)))
         DT  = torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt)))
+        print('GT 3d shape', GT.shape)
+        print('DT 3d shape', DT.shape)
+
+        GT_2d  = torch.Tensor(list(map(lambda x:x['num_keypoints'], gt)))
+        DT_2d  = torch.Tensor(list(map(lambda x:x['pred_keypoints'], dt)))                
+        print('GT 2d shape', GT_2d.shape)
+        print('DT 2d shape', DT_2d.shape)
+
 
         #Normalize relative to the hip
-        print('GT shape', GT.shape)
+        #print('GT shape', GT.shape)
         GT = GT.view(GT.shape[0], 6,3) #1,6,3
         midhip = (GT[:,0] + GT[:,1])/2
 
