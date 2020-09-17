@@ -402,13 +402,14 @@ class COCOeval:
 
 
         best_score = float('-inf')
+        best_score_2d = float('-inf')
         #all_nan = torch.isnan(GT)
 
         global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
 
-        for i, dt_2d in DT_2d:
-            target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
-            error = self.mpjpe_error(target, pred)
+        # for i, dt_2d in DT_2d:
+        #     target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
+        #     error = self.mpjpe_error(target, pred)
 
         for i, (dt_, dt_2d) in enumerate(zip(DT, DT_2d)):
         #for i, dt_ in enumerate(DT):
@@ -419,33 +420,44 @@ class COCOeval:
             print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
 
             score = self.pck(GT, dt_g)
+            score_2d = self.pck(GT_2d, dt_2d)
             #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
 
             target = GT.view(3,6); pred = dt_.view(3,6)
             error_3d = self.mpjpe_error(target, pred)
 
-            arget = GT_2d.view(3,6); pred = dt_2d.view(3,6)
+            target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
             error_2d = self.mpjpe_error(target, pred)
 
-            print(i, 'pck score on global', score)
-            print(i, 'mse loss', loss)
+            print(i, 'pck score on 2d', score_2d)
+            print(i, 'mse loss 3d', loss)
             print(i, 'mpjpe 3d error', error_3d)
             print(i, 'mpjpe 2d error', error_2d)
 
             all_cnt+=1
 
-            if score > best_score:
-                best_score = score
-                best_pred = dt_g
+            if score_2d > best_score_2d:
+                best_score_2d = score_2d
+                best_pred_2d = dt_2d
+                best_index = i
 
-        print('best PCK score in {} instances'.format(len(DT)), best_score)
+            #corresponding 3D detected using best 2D
+            best_3d =  DT[best_index]
+            report_error_3d = self.mpjpe_error(GT.view(3,6), best_3d.view(3,6))
+
+
+            # if score > best_score:
+            #     best_score = score
+            #     best_pred = dt_g
+
+        #print('best PCK score in {} instances'.format(len(DT)), best_score)
 
         _F_PCK_SCORE += best_score
         _BEST_3D_PRED_POSES.append(best_pred)
         cnt+=1
 
-        #print('Remember to divide the final _F_PCK_SCORE by the total no val/test images', _F_PCK_SCORE)
+        print('3D pck score for this image: {}', report_error_3d)
 
 
         # store results for given image and category
