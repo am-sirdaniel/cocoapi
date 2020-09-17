@@ -406,7 +406,12 @@ class COCOeval:
 
         global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
 
-        for i, dt_ in enumerate(DT):
+        for i, dt_2d in DT_2d:
+            target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
+            error = self.mpjpe_error(target, pred)
+
+        for i, (dt_, dt_2d) in enumerate(zip(DT, DT_2d)):
+        #for i, dt_ in enumerate(DT):
             dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
             dt_g = torch.Tensor(dt_).view(1,-1)
 
@@ -418,11 +423,15 @@ class COCOeval:
             loss = torch.nn.functional.mse_loss(dt_, GT)
 
             target = GT.view(3,6); pred = dt_.view(3,6)
-            error = self.mpjpe_error(target, pred)
+            error_3d = self.mpjpe_error(target, pred)
+
+            arget = GT_2d.view(3,6); pred = dt_2d.view(3,6)
+            error_2d = self.mpjpe_error(target, pred)
 
             print(i, 'pck score on global', score)
-            print(i, 'loss on norm', loss)
-            print(i, 'mpjpe error', error)
+            print(i, 'mse loss', loss)
+            print(i, 'mpjpe 3d error', error_3d)
+            print(i, 'mpjpe 2d error', error_2d)
 
             all_cnt+=1
 
