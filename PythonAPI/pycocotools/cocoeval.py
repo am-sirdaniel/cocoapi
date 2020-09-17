@@ -453,8 +453,8 @@ class COCOeval:
 
         #print('best PCK score in {} instances'.format(len(DT)), best_score)
 
-        _F_PCK_SCORE += best_score
-        _BEST_3D_PRED_POSES.append(best_pred)
+        _F_PCK_SCORE += best_score_2d
+        _BEST_3D_PRED_POSES.append(best_3d)
         cnt+=1
 
         print('3D pck score for this image: {}', report_error_3d)
