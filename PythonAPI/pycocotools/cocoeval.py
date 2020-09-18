@@ -441,17 +441,19 @@ class COCOeval:
                 best_score_2d = score_2d
                 best_pred_2d = dt_2d
                 best_index = i
+                best_score = score
 
             #corresponding 3D detected using best 2D
             best_3d =  DT[best_index]
-            report_error_3d = self.mpjpe_error(GT.view(3,6), best_3d.view(3,6))
+            report_error_3d = self.pck(GT.view(3,6), best_3d.view(3,6))
 
 
             # if score > best_score:
             #     best_score = score
             #     best_pred = dt_g
 
-        #print('best PCK score in {} instances'.format(len(DT)), best_score)
+        print('selected best 3d PCK score in {} instances'.format(len(DT)), score)
+        print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), score)
 
         _F_PCK_SCORE += best_score_2d
         _BEST_3D_PRED_POSES.append(best_3d)
