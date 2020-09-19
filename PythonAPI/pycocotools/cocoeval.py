@@ -6,14 +6,7 @@ import time
 from collections import defaultdict
 from . import mask as maskUtils
 import copy
-import torch
 
-_F_PCK_SCORE = 0
-_BEST_3D_PRED_POSES = []
-all_cnt = 0
-cnt = 0
-
-print('*************** Pycoco cocoeval script *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
@@ -75,12 +68,10 @@ class COCOeval:
             print('iouType not specified. use default iouType segm')
         self.cocoGt   = cocoGt              # ground truth COCO API
         self.cocoDt   = cocoDt              # detections COCO API
-        self.params   = {}                  # evaluation parameters
         self.evalImgs = defaultdict(list)   # per-image per-category evaluation results [KxAxI] elements
         self.eval     = {}                  # accumulated evaluation results
         self._gts = defaultdict(list)       # gt for evaluation
         self._dts = defaultdict(list)       # dt for evaluation
-        print('iouType', iouType)
         self.params = Params(iouType=iouType) # parameters
         self._paramsEval = {}               # parameters for evaluation
         self.stats = []                     # result summarization
@@ -88,6 +79,7 @@ class COCOeval:
         if not cocoGt is None:
             self.params.imgIds = sorted(cocoGt.getImgIds())
             self.params.catIds = sorted(cocoGt.getCatIds())
+
 
     def _prepare(self):
         '''
@@ -125,19 +117,6 @@ class COCOeval:
             self._dts[dt['image_id'], dt['category_id']].append(dt)
         self.evalImgs = defaultdict(list)   # per-image per-category evaluation results
         self.eval     = {}                  # accumulated evaluation results
-
-        print('before prepare phase')
-
-        pose3d_gt = list(map(lambda x:x['pose_3d'], gts))
-        pose3d_dt = list(map(lambda x:x['pred_3d_pts'], dts))
-
-        print('cocoeval pose3d_gt shape', torch.Tensor(pose3d_gt).shape)
-        print('cocoeval pose3d_gt sample', torch.Tensor(pose3d_gt)[0])
-
-        print('cocoeval pose3d_dt shape', torch.Tensor(pose3d_dt).shape)
-        print('cocoeval pose3d_dt sample', torch.Tensor(pose3d_dt)[0])
-
-        self.gt_cnt = len(pose3d_gt)
 
     def evaluate(self):
         '''
@@ -181,7 +160,6 @@ class COCOeval:
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format(toc-tic))
 
-
     def computeIoU(self, imgId, catId):
         p = self.params
         if p.useCats:
@@ -224,10 +202,7 @@ class COCOeval:
         if len(gts) == 0 or len(dts) == 0:
             return []
         ious = np.zeros((len(dts), len(gts)))
-        #sigmas = np.array([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62,.62, 1.07, 1.07, .87, .87, .89, .89])/10.0
-        #coco sigmas for hips, knees, & ankles
         sigmas = p.kpt_oks_sigmas
-
         vars = (sigmas * 2)**2
         k = len(sigmas)
         # compute oks between each detection and ground truth object
@@ -251,43 +226,11 @@ class COCOeval:
                     z = np.zeros((k))
                     dx = np.max((z, x0-xd),axis=0)+np.max((z, xd-x1),axis=0)
                     dy = np.max((z, y0-yd),axis=0)+np.max((z, yd-y1),axis=0)
-                #print("dx",dx, 'dy',dy," gt['area']", gt['area'], 'vars', vars)
                 e = (dx**2 + dy**2) / vars / (gt['area']+np.spacing(1)) / 2
                 if k1 > 0:
                     e=e[vg > 0]
                 ious[i, j] = np.sum(np.exp(-e)) / e.shape[0]
-        #print(ious)
         return ious
-
-    def pck(self, target, pred, treshold=100):
-        '''
-        Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm/100mm)
-
-        Arguments:
-        target: A tensor of shape (1, 18) : global values relative to hip in our case
-        pred: A tensor of shape (1, 18) : global values relative to hip in our case
-
-        Returns:
-            pck_score: A scalar value btw 0 and 1
-        '''
-        diff = torch.abs(target - pred)
-        count = torch.sum(diff < treshold, dtype=torch.float)
-        pck_score = count/ (target.shape[0]*target.shape[1])
-        return pck_score
-
-    def mpjpe_error(self, inps, out):
-        '''
-        MPJPE ERROR
-
-        Arguments:
-        target: A tensor of shape (3, 6) : global values relative to hip in our case
-        pred: A tensor of shape (3, 6) : global values relative to hip in our case
-
-        Returns:
-            mpjpe_erro: A scalar value
-        '''
-        error = sum(((out-inps)**2).sum(dim=0).sqrt())/inps.shape[1]
-        return error
 
     def evaluateImg(self, imgId, catId, aRng, maxDet):
         '''
@@ -354,114 +297,6 @@ class COCOeval:
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area']<aRng[0] or d['area']>aRng[1] for d in dt]).reshape((1, len(dt)))
         dtIg = np.logical_or(dtIg, np.logical_and(dtm==0, np.repeat(a,T,0)))
-
-
-        ############ 3D Evaluation ###############################
-        print('performing 3D Evaluation')
-        GT  = torch.Tensor(list(map(lambda x:x['pose_3d'], gt)))
-        DT  = torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt)))
-        print('GT 3d shape', GT.shape)
-        print('DT 3d shape', DT.shape)
-
-        print(gt[0])
-        print(dt[0])
-
-        GT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], gt))) #(x,y, visibility)
-        DT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], dt))) #(x,y,score)             
-        print('GT 2d shape', GT_2d.shape)
-        print('DT 2d shape', DT_2d.shape)
-
-
-        #Normalize relative to the hip
-        #print('GT shape', GT.shape)
-        GT = GT.view(GT.shape[0], 6,3) #1,6,3
-        midhip = (GT[:,0] + GT[:,1])/2
-
-        print('GT shape, midhip shape', GT.shape, midhip.unsqueeze(1).shape)
-        GT = GT - midhip.unsqueeze(1)
-        #GT = GT.view(GT.shape[0], -1)
-
-        GT = GT.view(GT.shape[0], -1) #1,18
-
-        #Normalize 3d GT by mean-std relative to the hip
-        mean_3d, std_3d = (torch.Tensor([   90.4226,   -99.0404,   113.7033,   -90.4226,    99.0404,  -113.7033,
-            -1257.6155, -1297.9100, -1227.4360, -1220.5818, -1329.1154, -1301.5215,
-              797.3640,   756.3050,   403.3004,   410.9879,   -14.6912,    16.2920]),
-        torch.Tensor([ 15.5230,  19.4742,  25.6194,  15.5230,  19.4742,  25.6194, 183.8460,
-            172.6190, 212.3050, 218.0117, 192.0247, 208.0867, 178.1015, 186.4496,
-            160.7282, 160.8192, 163.5823, 152.6740]))
-
-        
-        print('Global 3d GT sample in Evaluation: ', GT[0:5])
-
-        print('last gt sample', GT[0])
-        print('last dt sample', DT[0])
-        print()
-        print('last gt shape', GT.shape)
-        print('last dt shape', DT.shape)
-
-
-        best_score = float('-inf')
-        best_score_2d = float('-inf')
-        #all_nan = torch.isnan(GT)
-
-        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
-
-        # for i, dt_2d in DT_2d:
-        #     target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
-        #     error = self.mpjpe_error(target, pred)
-
-        for i, (dt_, dt_2d) in enumerate(zip(DT, DT_2d)):
-        #for i, dt_ in enumerate(DT):
-            dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
-            dt_g = torch.Tensor(dt_).view(1,-1)
-
-            #consider only valid
-            print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
-
-            score = self.pck(GT, dt_g)
-            score_2d = self.pck(GT_2d, dt_2d)
-            #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
-            loss = torch.nn.functional.mse_loss(dt_, GT)
-
-            target = GT.view(3,6); pred = dt_.view(3,6)
-            error_3d = self.mpjpe_error(target, pred)
-
-            target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
-            error_2d = self.mpjpe_error(target, pred)
-
-            print(i, 'pck score on 2d', score_2d)
-            print(i, 'mse loss 3d', loss)
-            print(i, 'mpjpe 3d error', error_3d)
-            print(i, 'mpjpe 2d error', error_2d)
-
-            all_cnt+=1
-
-            if score_2d > best_score_2d:
-                best_score_2d = score_2d
-                best_pred_2d = dt_2d
-                best_index = i
-                best_score = score
-
-            #corresponding 3D detected using best 2D
-            best_3d =  DT[best_index]
-            report_error_3d = self.pck(GT.view(3,6), best_3d.view(3,6))
-
-
-            # if score > best_score:
-            #     best_score = score
-            #     best_pred = dt_g
-
-        print('selected best 3d PCK score in {} instances'.format(len(DT)), score)
-        print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), score)
-
-        _F_PCK_SCORE += best_score
-        _BEST_3D_PRED_POSES.append(best_3d)
-        cnt+=1
-
-        #print('3D pck score for this image: {}', report_error_3d)
-
-
         # store results for given image and category
         return {
                 'image_id':     imgId,
@@ -496,9 +331,6 @@ class COCOeval:
         K           = len(p.catIds) if p.useCats else 1
         A           = len(p.areaRng)
         M           = len(p.maxDets)
-
-        print('T, R, K,A, M', T, R, K,A, M)
-
         precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
         recall      = -np.ones((T,K,A,M))
         scores      = -np.ones((T,R,K,A,M))
@@ -587,23 +419,11 @@ class COCOeval:
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format( toc-tic))
 
-
     def summarize(self):
         '''
         Compute and display summary metrics for evaluation results.
         Note this functin can *only* be applied on the default parameter setting
         '''
-        
-        #3D Evaluation Final Score
-        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
-        print('_F_PCK_SCORE', _F_PCK_SCORE)
-        print('cnt', cnt)
-        print('all_cnt', all_cnt)
-
-        print('tweaked final score', _F_PCK_SCORE/cnt)
-        print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
-        print('First 5 ', _BEST_3D_PRED_POSES[0:5])
-
         def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
             p = self.params
             iStr = ' {:<18} {} @[ IoU={:<9} | area={:>6s} | maxDets={:>3d} ] = {:0.3f}'
@@ -675,7 +495,6 @@ class COCOeval:
     def __str__(self):
         self.summarize()
 
-
 class Params:
     '''
     Params for coco evaluation api
@@ -684,8 +503,8 @@ class Params:
         self.imgIds = []
         self.catIds = []
         # np.arange causes trouble.  the data point on arange is slightly larger than the true value
-        self.iouThrs = np.linspace(.5, 0.95, int((0.95 - .5) / .05) + 1, endpoint=True)
-        self.recThrs = np.linspace(.0, 1.00, int((1.00 - .0) / .01) + 1, endpoint=True)
+        self.iouThrs = np.linspace(.5, 0.95, int(np.round((0.95 - .5) / .05)) + 1, endpoint=True)
+        self.recThrs = np.linspace(.0, 1.00, int(np.round((1.00 - .0) / .01)) + 1, endpoint=True)
         self.maxDets = [1, 10, 100]
         self.areaRng = [[0 ** 2, 1e5 ** 2], [0 ** 2, 32 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
         self.areaRngLbl = ['all', 'small', 'medium', 'large']
@@ -695,13 +514,13 @@ class Params:
         self.imgIds = []
         self.catIds = []
         # np.arange causes trouble.  the data point on arange is slightly larger than the true value
-        self.iouThrs = np.linspace(.5, 0.95, int((0.95 - .5) / .05) + 1, endpoint=True)
-        self.recThrs = np.linspace(.0, 1.00, int((1.00 - .0) / .01) + 1, endpoint=True)
+        self.iouThrs = np.linspace(.5, 0.95, int(np.round((0.95 - .5) / .05)) + 1, endpoint=True)
+        self.recThrs = np.linspace(.0, 1.00, int(np.round((1.00 - .0) / .01)) + 1, endpoint=True)
         self.maxDets = [20]
         self.areaRng = [[0 ** 2, 1e5 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
         self.areaRngLbl = ['all', 'medium', 'large']
         self.useCats = 1
-        self.kpt_oks_sigmas  = np.array([1.07, 1.07, 0.87, 0.87, 0.89, 0.89]) # divide by 10 #np.array([.9,.9,.9,.9,.9,.9])
+        self.kpt_oks_sigmas = np.array([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62,.62, 1.07, 1.07, .87, .87, .89, .89])/10.0
 
     def __init__(self, iouType='segm'):
         if iouType == 'segm' or iouType == 'bbox':
