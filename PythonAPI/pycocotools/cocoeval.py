@@ -401,7 +401,7 @@ class COCOeval:
         print('last dt shape', DT.shape)
 
 
-        best_score = float('-inf')
+        best_score_3d = float('-inf')
         best_score_2d = float('-inf')
         #all_nan = torch.isnan(GT)
 
@@ -419,7 +419,7 @@ class COCOeval:
             #consider only valid
             print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
 
-            score = self.pck(GT, dt_g)
+            score_3d = self.pck(GT, dt_g)
             score_2d = self.pck(GT_2d, dt_2d)
             #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
@@ -441,21 +441,26 @@ class COCOeval:
                 best_score_2d = score_2d
                 best_pred_2d = dt_2d
                 best_index = i
-                best_score = score
+                best_score_3d = score_3d
+                best_3d = dt_g
+                report_error_3d = error_3d
+                report_error_2d = error_2d
 
             #corresponding 3D detected using best 2D
-            best_3d =  DT[best_index]
-            report_error_3d = self.pck(GT.view(3,6), best_3d.view(3,6))
+            #best_3d =  DT[best_index]
+            #report_error_3d = self.pck(GT.view(3,6), best_3d.view(3,6))
 
 
             # if score > best_score:
             #     best_score = score
             #     best_pred = dt_g
 
-        print('selected best 3d PCK score in {} instances'.format(len(DT)), score)
-        print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), score)
+        print('selected best 2d PCK score in {} instances'.format(len(DT)), score_2d)
+        print('correspodning best 3d PCK score in {} instances'.format(len(DT)), score_3d)
+        print('correspodning 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
+        print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
 
-        _F_PCK_SCORE += best_score
+        _F_PCK_SCORE += score_3d
         _BEST_3D_PRED_POSES.append(best_3d)
         cnt+=1
 
