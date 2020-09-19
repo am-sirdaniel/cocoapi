@@ -13,7 +13,7 @@ _BEST_3D_PRED_POSES = []
 all_cnt = 0
 cnt = 0
 
-print('*************** Pycoco cocoeval script Update*****************')
+print('*************** Pycoco cocoeval script *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
