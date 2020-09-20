@@ -438,6 +438,7 @@ class COCOeval:
             all_cnt+=1
 
             if score_2d > best_score_2d:
+                print('yes')
                 best_score_2d = score_2d
                 best_pred_2d = dt_2d
                 best_index = i
@@ -455,12 +456,12 @@ class COCOeval:
             #     best_score = score
             #     best_pred = dt_g
 
-        print('selected best 2d PCK score in {} instances'.format(len(DT)), score_2d)
-        print('correspodning best 3d PCK score in {} instances'.format(len(DT)), score_3d)
+        print('selected best 2d PCK score in {} instances'.format(len(DT)), best_score_2d)
+        print('correspodning best 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
         print('correspodning 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
         print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
 
-        _F_PCK_SCORE += score_3d
+        _F_PCK_SCORE += best_score_3d
         _BEST_3D_PRED_POSES.append(best_3d)
         cnt+=1
 
