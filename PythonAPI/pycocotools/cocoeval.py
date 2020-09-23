@@ -178,6 +178,7 @@ class COCOeval:
                  for imgId in p.imgIds
              ]
 
+
         print('len p.imgIds: ', len(p.imgIds))
         print('len p.areaRng: ', len(p.areaRng))
         print('len catIds: ', len(catIds))
@@ -302,6 +303,12 @@ class COCOeval:
         :return: dict (single image results)
         '''
         p = self.params
+
+        print('len p.imgIds: ', len(p.imgIds))
+        print('len p.areaRng: ', len(p.areaRng))
+        print('len catIds: ', len(catIds))
+
+        print(f'imgId:{imgId}, catId:{catId}, aRng:{aRng}, maxDet:{maxDet}')
         if p.useCats:
             gt = self._gts[imgId,catId]
             dt = self._dts[imgId,catId]
@@ -472,6 +479,8 @@ class COCOeval:
         _F_PCK_SCORE += best_score_3d
         _BEST_3D_PRED_POSES.append(best_3d)
         cnt+=1
+
+        print(f'cnt:{cnt} all_cnt:{all_cnt}')
 
         #print('3D pck score for this image: {}', report_error_3d)
 
