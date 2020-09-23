@@ -177,6 +177,13 @@ class COCOeval:
                  for areaRng in p.areaRng
                  for imgId in p.imgIds
              ]
+
+        print('len p.imgIds: ', len(p.imgIds))
+        print('len p.areaRng: ', len(p.areaRng))
+        print('len catIds: ', len(catIds))
+
+        print('len evaluated images: ', len(self.evalImgs ))
+
         self._paramsEval = copy.deepcopy(self.params)
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format(toc-tic))
@@ -431,6 +438,7 @@ class COCOeval:
             error_2d = self.mpjpe_error(target, pred)
 
             print(i, 'pck score on 2d', score_2d)
+            print(i, 'pck score on 3d', score_3d)
             print(i, 'mse loss 3d', loss)
             print(i, 'mpjpe 3d error', error_3d)
             print(i, 'mpjpe 2d error', error_2d)
