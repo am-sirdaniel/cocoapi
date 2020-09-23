@@ -303,7 +303,7 @@ class COCOeval:
         :return: dict (single image results)
         '''
         p = self.params
-
+        catIds = p.catIds if p.useCats else [-1]
         print('len p.imgIds: ', len(p.imgIds))
         print('len p.areaRng: ', len(p.areaRng))
         print('len catIds: ', len(catIds))
@@ -437,6 +437,7 @@ class COCOeval:
             score_2d = self.pck(GT_2d, dt_2d)
             #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
             loss = torch.nn.functional.mse_loss(dt_, GT)
+            loss_2 = torch.nn.functional.mse_loss(GT_2d, dt_2d)
 
             target = GT.view(3,6); pred = dt_.view(3,6)
             error_3d = self.mpjpe_error(target, pred)
@@ -447,6 +448,7 @@ class COCOeval:
             print(i, 'pck score on 2d', score_2d)
             print(i, 'pck score on 3d', score_3d)
             print(i, 'mse loss 3d', loss)
+            print(i, 'mse loss 2d', loss_2)
             print(i, 'mpjpe 3d error', error_3d)
             print(i, 'mpjpe 2d error', error_2d)
 
@@ -461,6 +463,8 @@ class COCOeval:
                 best_3d = dt_g
                 report_error_3d = error_3d
                 report_error_2d = error_2d
+                best_loss = loss
+                best_loss_2 = loss_2
 
             #corresponding 3D detected using best 2D
             #best_3d =  DT[best_index]
@@ -475,6 +479,8 @@ class COCOeval:
         print('correspodning best 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
         print('correspodning 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
         print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
+        print('best loss : ', best_loss)
+        print('best loss_2d : ', best_loss_2)
 
         _F_PCK_SCORE += best_score_3d
         _BEST_3D_PRED_POSES.append(best_3d)
