@@ -173,6 +173,8 @@ class COCOeval:
         evaluateImg = self.evaluateImg
         maxDet = p.maxDets[-1]
 
+        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
+        
         _F_PCK_SCORE = 0
         _BEST_3D_PRED_POSES = []
         all_cnt = 0
