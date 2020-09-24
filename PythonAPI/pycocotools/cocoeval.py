@@ -188,21 +188,22 @@ class COCOeval:
              ]
 
 
-        print('----------------------------')
+        print('-------------  Outside evaluateImg function (variables resetted)  ---------------')
+
+        print('len evaluated images: ', len(self.evalImgs ))
         print('_F_PCK_SCORE: ', _F_PCK_SCORE)
-        print('len(_BEST_3D_PRED_POSES): ', len(_BEST_3D_PRED_POSES))
-        print('all_cnt: ', all_cnt)
+        #print('len(_BEST_3D_PRED_POSES): ', len(_BEST_3D_PRED_POSES))
         print('cnt: ', cnt)
+        print('all_cnt: ', all_cnt)
+        print('Joe proposed Score: ', _F_PCK_SCORE/cnt)
 
-
-        print('Joseph Score: ', _F_PCK_SCORE/cnt)
-
-        print('----------------------------')
+        
         print('len p.imgIds: ', len(p.imgIds))
         print('len p.areaRng: ', len(p.areaRng))
         print('len catIds: ', len(catIds))
+        print('----------------------------------------------------------------------------------')
 
-        print('len evaluated images: ', len(self.evalImgs ))
+        
 
         self._paramsEval = copy.deepcopy(self.params)
         toc = time.time()
