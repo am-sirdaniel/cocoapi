@@ -174,22 +174,29 @@ class COCOeval:
         maxDet = p.maxDets[-1]
 
         global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
-        
+
         _F_PCK_SCORE = 0
         _BEST_3D_PRED_POSES = []
         all_cnt = 0
         cnt = 0
+
+        print('what are these p.areaRng ? ', p.areaRng)
         self.evalImgs = [evaluateImg(imgId, catId, areaRng, maxDet)
                  for catId in catIds
                  for areaRng in p.areaRng
                  for imgId in p.imgIds
              ]
 
+
         print('----------------------------')
         print('_F_PCK_SCORE: ', _F_PCK_SCORE)
         print('len(_BEST_3D_PRED_POSES): ', len(_BEST_3D_PRED_POSES))
         print('all_cnt: ', all_cnt)
         print('cnt: ', cnt)
+
+
+        print('Joseph Score: ', _F_PCK_SCORE/cnt)
+
         print('----------------------------')
         print('len p.imgIds: ', len(p.imgIds))
         print('len p.areaRng: ', len(p.areaRng))
