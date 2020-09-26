@@ -394,7 +394,7 @@ class COCOeval:
                     if m ==-1:
                         continue
                     dtIg[tind,dind] = gtIg[m]
-                    dtm[tind,discorend]  = gt[m]['id']
+                    dtm[tind,dind]  = gt[m]['id']
                     gtm[tind,m]     = d['id']
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area']<aRng[0] or d['area']>aRng[1] for d in dt]).reshape((1, len(dt)))
