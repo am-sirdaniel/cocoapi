@@ -7,6 +7,7 @@ from collections import defaultdict
 from . import mask as maskUtils
 import copy
 import torch
+from IPython import display
 
 _F_PCK_SCORE = 0
 _BEST_3D_PRED_POSES = []
@@ -348,7 +349,11 @@ class COCOeval:
         gtind = np.argsort([g['_ignore'] for g in gt], kind='mergesort')
         gt = [gt[i] for i in gtind]
         dtind = np.argsort([-d['score'] for d in dt], kind='mergesort')
+
+        print('dtind length, some example 2d scores', len(dtind), dtind[0:10])
         dt = [dt[i] for i in dtind[0:maxDet]]
+        print('checking dt', dt[0:10])
+
         iscrowd = [int(o['iscrowd']) for o in gt]
         # load computed ious
         ious = self.ious[imgId, catId][:, gtind] if len(self.ious[imgId, catId]) > 0 else self.ious[imgId, catId]
@@ -360,11 +365,15 @@ class COCOeval:
         dtm  = np.zeros((T,D))
         gtIg = np.array([g['_ignore'] for g in gt])
         dtIg = np.zeros((T,D))
+
+        print('len of dt and gt before for loops', len(dt), len(gt))
         if not len(ious)==0:
             for tind, t in enumerate(p.iouThrs):
+                print('tind, t', tind, t)
                 for dind, d in enumerate(dt):
                     # information about best match so far (m=-1 -> unmatched)
                     iou = min([t,1-1e-10])
+                    print('iou', iou)
                     m   = -1
                     for gind, g in enumerate(gt):
                         # if this gt already matched, and not a crowd, continue
@@ -383,7 +392,7 @@ class COCOeval:
                     if m ==-1:
                         continue
                     dtIg[tind,dind] = gtIg[m]
-                    dtm[tind,dind]  = gt[m]['id']
+                    dtm[tind,discorend]  = gt[m]['id']
                     gtm[tind,m]     = d['id']
         # set unmatched detections outside of area range to ignore
         a = np.array([d['area']<aRng[0] or d['area']>aRng[1] for d in dt]).reshape((1, len(dt)))
@@ -654,6 +663,7 @@ class COCOeval:
         Compute and display summary metrics for evaluation results.
         Note this functin can *only* be applied on the default parameter setting
         '''
+        display.clear_output(wait=True)
         
         #3D Evaluation Final Score
         global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
@@ -663,7 +673,7 @@ class COCOeval:
 
         print('tweaked final score', _F_PCK_SCORE/cnt)
         print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
-        print('First 5 ', _BEST_3D_PRED_POSES[0:5])
+        #print('First 5 ', _BEST_3D_PRED_POSES[0:5])
 
         def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
             p = self.params
@@ -706,7 +716,7 @@ class COCOeval:
             stats[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
             stats[6] = _summarize(0, maxDets=self.params.maxDets[0])
             stats[7] = _summarize(0, maxDets=self.params.maxDets[1])
-            stats[8] = _summarize(0, maxDets=self.params.maxDets[2])
+            stats[8] = _sdisplay.clear_output(wait=True)ummarize(0, maxDets=self.params.maxDets[2])
             stats[9] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
             stats[10] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
             stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
