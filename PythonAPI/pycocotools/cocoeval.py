@@ -437,6 +437,7 @@ class COCOeval:
 
         best_score_3d = float('-inf')
         best_score_2d = float('-inf')
+        least_error_3d = float('inf')
         #all_nan = torch.isnan(GT)
 
         global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
@@ -474,33 +475,44 @@ class COCOeval:
 
             all_cnt+=1
 
-            if score_2d > best_score_2d:
-                print('yes')
-                best_score_2d = score_2d
-                best_pred_2d = dt_2d
+            #corresponding 3D detected using best 2D
+            # if score_2d > best_score_2d:
+            #     print('yes')
+            #     best_score_2d = score_2d
+            #     best_pred_2d = dt_2d
+            #     best_index = i
+            #     best_score_3d = score_3d
+            #     best_3d = dt_g
+            #     report_error_3d = error_3d
+            #     report_error_2d = error_2d
+            #     best_loss = loss
+            #     best_loss_2 = loss_2
+
+            #3D best
+            if error_3d < least_error_3d:
+                least_error_3d = error_3d
                 best_index = i
                 best_score_3d = score_3d
                 best_3d = dt_g
-                report_error_3d = error_3d
+
+                #report_error_3d = error_3d
                 report_error_2d = error_2d
+                
                 best_loss = loss
                 best_loss_2 = loss_2
 
-            #corresponding 3D detected using best 2D
-            #best_3d =  DT[best_index]
-            #report_error_3d = self.pck(GT.view(3,6), best_3d.view(3,6))
-
+            
 
             # if score > best_score:
             #     best_score = score
             #     best_pred = dt_g
 
-        print('selected best 2d PCK score in {} instances'.format(len(DT)), best_score_2d)
-        print('correspodning best 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
+        print('selected least 3d error in {} instances'.format(len(DT)), least_error_3d)
+        print('correspodning 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
         print('correspodning 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
-        print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
-        print('best loss : ', best_loss)
-        print('best loss_2d : ', best_loss_2)
+        #print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
+        print('loss 3d: ', best_loss)
+        print('loss 2d : ', best_loss_2)
 
         _F_PCK_SCORE += best_score_3d
         _BEST_3D_PRED_POSES.append(best_3d)
