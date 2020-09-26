@@ -1,818 +1,804 @@
-__author__ = 'tsungyi'
-
-import numpy as np
-import datetime
-import time
-from collections import defaultdict
-from . import mask as maskUtils
-import copy
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+from __future__ import absolute_import
+from __future__ import print_function
+# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+from typing import List
 import torch
+from torch import nn
+from torch.nn import functional as F
+import numpy as np
+from detectron2.modeling.roi_heads import custom_plotting 
+import matplotlib.pyplot as plt
+import cv2
+
+#import utils
+#import plotting
+#import triangulate 
+import numpy as np
+
+#from PIL import Image
+import pandas as pd
+#import torch
+#import torchvision
+#import torchvision.transforms as transforms
+#import h5py
+import os
 from IPython import display
+#import torch.nn.functional as nn
 
-_F_PCK_SCORE1, _F_PCK_SCORE2 = 0,0
-_BEST_3D_PRED_POSES = []
-all_cnt = 0
-cnt = 0
+from detectron2.config import configurable
+from detectron2.layers import Conv2d, ConvTranspose2d, cat, interpolate
+from detectron2.structures import Instances, heatmaps_to_keypoints
+from detectron2.utils.events import get_event_storage
+from detectron2.utils.registry import Registry
 
-print('*************** Pycoco cocoeval script *****************')
-class COCOeval:
-    # Interface for evaluating detection on the Microsoft COCO dataset.
+_TOTAL_SKIPPED = 0
+_TOTAL_SKIPPED_KPS = 0
+_LOSSES_2D, _LOSSES_3D, _LOSSES_COMB = [], [], []
+_PCK_SCORE = 0
+
+print('********************USING MASK DIRECT 2D+3D SCRIPT *****************')
+
+__all__ = [
+    "ROI_KEYPOINT_HEAD_REGISTRY",
+    "build_keypoint_head",
+    "BaseKeypointRCNNHead",
+    "KRCNNConvDeconvUpsampleHead",
+]
+
+
+ROI_KEYPOINT_HEAD_REGISTRY = Registry("ROI_KEYPOINT_HEAD")
+ROI_KEYPOINT_HEAD_REGISTRY.__doc__ = """
+Registry for keypoint heads, which make keypoint predictions from per-region features.
+The registered object will be called with `obj(cfg, input_shape)`.
+"""
+
+import torch.nn as nn
+
+
+def build_keypoint_head(cfg, input_shape):
+    """
+    Build a keypoint head from `cfg.MODEL.ROI_KEYPOINT_HEAD.NAME`.
+    """
+    name = cfg.MODEL.ROI_KEYPOINT_HEAD.NAME
+    return ROI_KEYPOINT_HEAD_REGISTRY.get(name)(cfg, input_shape)
+
+def integral_2d_innovate(heatmap_, rois):
+    #print('2d Innovate being used')
+    #heatmap i.e pred_keypoint_logits (Tensor): A tensor of shape (N, K, S, S) / (N, K, H, W) 
+    heatmap = heatmap_[:,0:6,:,:]
+    h, w = heatmap.shape[2], heatmap.shape[3]
+    #print('origin logits bf heatmap', heatmap.shape)
+
+    #implementing softmax (this was for a batch)
+    #softmax -max soln works even with neg values
+    max_ = torch.max(torch.max(heatmap, dim=-1)[0], dim=-1, keepdim=True)[0].unsqueeze(-1) #soving the numerical problem
+    print('max shape', max_.shape)
+    heatmap = heatmap - max_
+
+    exp_heatmap = torch.exp(heatmap)
+    h_norm = exp_heatmap / torch.sum(exp_heatmap, dim = (-1,-2), keepdim = True)
+
+
+    start_x = rois[:, 0]
+    start_y = rois[:, 1]
+
+    scale_x = 1 / (rois[:, 2] - rois[:, 0])#bottom part of min-max normalization with division
+    scale_y = 1 / (rois[:, 3] - rois[:, 1])
+
+    scale_inv_x = (rois[:, 2] - rois[:, 0]) #bottom part of min-max normalization without division yet
+    scale_inv_y = (rois[:, 3] - rois[:, 1])
+
+    #DISCRETE FORM of integral is not expensive 
+    #Our choice (0->1) ROI coordinates 
+    x_list = torch.linspace(0,1, w).cuda()
+    y_list = torch.linspace(0,1, h).cuda()
+    # 3D Heatmap z_list = torch.linspace(0,1,z).cuda()
+    i,j = torch.meshgrid(x_list, y_list)
+
+    #weighted by their probabilities.
+    i_ = torch.sum(i*h_norm, dim=(-1,-2))
+    j_ = torch.sum(j*h_norm, dim=(-1,-2))
+
+    # transforming back to global relative coords
+    #print('i_, scale_inv_x, start_x', i_.shape, scale_inv_x, start_x)
+    print('i_ (before) as 0-1 coordinates', i_[0])
+    i_g = i_ * scale_inv_x.reshape(-1,1) + start_x.reshape(-1,1)
+    j_g = j_ * scale_inv_y.reshape(-1,1) + start_y.reshape(-1,1)
+
+    #Modified arrangement
+    pose_glob  = torch.stack((i_g,j_g),dim=2) #[[i,i,i,,], #(N,K, 2)
+                                       #[j,j,j,,,]]
+
+    pose_norm = torch.stack((i_,j_),dim=2) #[[i,i,i,,], #(N,K, 2)
+                                       #[j,j,j,,,]]
+
+
+    print('checking, is I and J well placed as x,y?', pose_glob[0][0:2])
+    print('min and max of I ', torch.min(i_), torch.max(i_))
+    print('min and max of J', torch.min(j_), torch.max(j_))
+
+    #return relative global coordinates
+    #print('pose relative global coordinates', pose[0][0])
+    return ({'probabilitymap': h_norm, 'pose_2d global': pose_glob, 'pose_2d norm': pose_norm,}) #(N,K, 2)
+
+
+
+
+def integral_3d_innovate(heatmap_,  indices = []):
+    #heatmap i.e pred_keypoint_logits (Tensor): A tensor of shape (N, 72, S, S) / (N, K, H, W) 
+    
+    #select best
+    if len(indices) > 0:
+        heatmap_ = heatmap_[indices]#.unsqueeze(0)
+    else:
+        pass
+
+    heatmap = heatmap_[:,0:6,:,:]
+    h, w = heatmap.shape[2], heatmap.shape[3]
+
+    # H Heatmap, X,Y,Z location maps
+    location_map_X = heatmap_[:,6:12,:,:]
+    location_map_Y = heatmap_[:,12:18,:,:]
+    location_map_Z = heatmap_[:,18:24,:,:]
+
+     #implementing softmax ,#soving the numerical problem
+    heatmap = heatmap - torch.max(torch.max(heatmap, dim=-1)[0], dim=-1, keepdim=True)[0].unsqueeze(-1) 
+    exp_heatmap = torch.exp(heatmap)
+    h_norm = exp_heatmap / torch.sum(exp_heatmap, dim = (-1,-2), keepdim = True)
+    
+    #all locations map in the domain, weighted by their probabilities.
+    i_ = torch.sum(location_map_X*h_norm, dim=(-1,-2))
+    j_ = torch.sum(location_map_Y*h_norm, dim=(-1,-2))
+    z_ = torch.sum(location_map_Z*h_norm, dim=(-1,-2))
+
+    pose3d  = torch.stack((i_,j_,z_),dim=2) #[[i,i,i,,],
+                                       #[j,j,j,,,]]
+
+    return ({'probabilitymap': h_norm, 'pose_3d': pose3d}) #(1,K,3)
+
+
+def keypoint_rcnn_loss(pred_keypoint_logits, instances, normalizer):
+    """
+    Arguments:
+        pred_keypoint_logits (Tensor): A tensor of shape (N, K, S, S) where N is the total number
+            of instances in the batch, K is the number of keypoints, and S is the side length
+            of the keypoint heatmap. The values are spatial logits.
+            predicted keypoint heatmaps in `pred_keypoint_logits`
+        instances (list[Instances]): A list of M Instances, where M is the batch size.
+            These instances are predictions from the model
+            that are in 1:1 correspondence with pred_keypoint_logits.
+            Each Instances should contain a `gt_keypoints` field containing a `structures.Keypoint`
+            instance.
+        normalizer (float): Normalize the loss by this amount.
+            If not specified, we normalize by the number of visible keypoints in the minibatch.
+    Returns a scalar tensor containing the loss.
+    """
+
+    heatmaps = []
+    valid = []
+    kps = []
+    p3d = []
+
+    color_order_ego = [1, 3, 5, 7, 2, 4, 6,];
+
+    bones_ego = [[0,1], [0,2],[2,4],[1,3], [3,5]]
+
+    N, K, H, W = pred_keypoint_logits.shape
+    print('N, K, H, W', N, K, H, W)
+    keypoint_side_len = pred_keypoint_logits.shape[2]
+
+
+
+    # flatten all GT bboxes from all images together (list[Boxes] -> Rx4 tensor)
+    #print('check for box rois: ', [b.proposal_boxes.tensor for b in instances])
+    bboxes_flat = cat([b.proposal_boxes.tensor for b in instances], dim=0)
+    rois = bboxes_flat.detach()
+
+    
+
+    cnt_, indexing, better_logits, indices = 0,0,[],[]
+    for instances_per_image in instances:
+        cnt_+=1
+        if len(instances_per_image) == 0:
+            continue
+
+        #print('instances_per_image', instances_per_image) #contains grndtruths
+        keypoints = instances_per_image.gt_keypoints
+        # if len(keypoints) ==0:
+        #   print('EMPTY KEYPOINTS, WHY?') 
+        #   continue
+
+
+        #print('other fields:', instances_per_image.get_fields())
+        #print('can we get image dim programmatically? :', instances_per_image.ke
+        #############################################
+        pose3d_pts = instances_per_image.gt_pose3d.cuda()
+        pose3d_pts = pose3d_pts.reshape(pose3d_pts.shape[0],6,3)
+        print('pose3d_pts shape', pose3d_pts.shape)
+        #print('pose3d_pts ', pose3d_pts)
+        ############################################################
+        #e.g (8,6,3)
+        #print('Daniel test keypoints', keypoints.tensor.shape)
+        #GT keypoints -> GT heatmaps  
+        heatmaps_per_image, valid_per_image = keypoints.to_heatmap(
+            instances_per_image.proposal_boxes.tensor, keypoint_side_len
+        )
+
+        #print('keypoint 2 GT heatmap => Indices of ROI, lets see hip heatmap', heatmaps_per_image.shape, heatmaps_per_image[0][0])
+        #GT heatmaps -> to 1D vector
+        heatmaps.append(heatmaps_per_image.view(-1)) #N*K
+        valid.append(valid_per_image.view(-1)) #stretch to 1D vector
+        #print('keypoints.tensor[:,:,0:2]', keypoints.tensor[:,:,0:2].shape)
+        kps.append(keypoints.tensor[:,:,0:2]) #exclude visibility out
+        ###################################
+        p3d.append(pose3d_pts)
+
+
+        # ***************
+
+        # heatmaps.append(heatmaps_per_image.view(-1)) #N*K
+        # valid.append(valid_per_image.view(-1)) #stretch to 1D vector
+        
+        # #***** Pass in 2D best**************
+        # num = keypoints.tensor[:,:,0:2].shape[0]
+        # start = indexing
+        # indexing = indexing + num
+        # stop = indexing
+
+        # a,b = pred_integral['pose_2d global'][start:stop], keypoints.tensor[:,:,0:2]
+        # perf = list(map(lambda x: torch.nn.functional.mse_loss(x[0],x[1]) , zip(a,b)))
+        # best_index = np.argmin(perf)
+        # indices.append(best_index+start)
+
+        # print('best_index', best_index)
+        # best_2D = a[best_index].unsqueeze(0)
+
+        # better_logits.append(best_2D) 
+        # ###################################
+        
+        # kps.append(keypoints.tensor[:,:,0:2]) #exclude visibility out
+        # p3d.append(pose3d_pts[0].unsqueeze(0))
+
+    if len(heatmaps):
+        keypoint_targets = cat(heatmaps, dim=0) #single vector (GT heatmaps)
+        valid = cat(valid, dim=0).to(dtype=torch.uint8) #single vector
+        valid = torch.nonzero(valid).squeeze(1)
+
+
+    # torch.mean (in binary_cross_entropy_with_logits) doesn't
+    # accept empty tensors, so handle it separately
+    if len(heatmaps) == 0 or valid.numel() == 0:
+        global _TOTAL_SKIPPED
+        _TOTAL_SKIPPED += 1
+        storage = get_event_storage()
+        storage.put_scalar("kpts_num_skipped_batches", _TOTAL_SKIPPED, smoothing_hint=False)
+        return pred_keypoint_logits.sum() * 0
+
+
+
+    # print('indices', indices)
+    # better_logits = torch.cat(better_logits)
+    # print('better_logits', better_logits.shape)
+    # print('length of better_logits should alwasys be three ', len(better_logits))
+
+    # print('{} images in batch (training)'.format(cnt_))
+    # print('GT 2d is {} GT 3d is {} before cat transformation'.format(len(kps), len(p3d)))
+
+
+    pred_integral = integral_2d_innovate(pred_keypoint_logits, rois)
+    hnorm_2d = pred_integral['probabilitymap']
+    print('confirm shape after 2d integral ', pred_integral['pose_2d global'].shape)
+    
+
+    kps = torch.cat(kps)
+    p3d = torch.cat(p3d)
+    print('GT pose2d shape', kps.shape)
+    print('GT pose3d shape', p3d.shape)
+
+    kps_origin = kps
+
+    #print('min and max of pred_keypoint_logits', torch.min(pred_keypoint_logits), torch.max(pred_keypoint_logits))
+    # pred_keypoint_logits = pred_keypoint_logits.view(N * K, H * W)
+    # pred_keypoint_logits_  = pred_keypoint_logits[valid].view(N,K, H,W)
+    #pred_keypoint_logits = pred_keypoint_logits.view(N * K, H * W)
+
+    #lets confirm equal total instances
+    # try:
+    #     assert (kps.shape[0] == pred_keypoint_logits.shape[0])
+    # except:
+    #     print('kps shape', kps.shape, 'pred_keypoint_logits shape', pred_keypoint_logits.shape)
+    #     assert (kps.shape[0] == pred_keypoint_logits.shape[0])
+
+    # if use_2d:
+    #print('pred_keypoint_logits', pred_keypoint_logits[0][0:2])
+    #print('using 2d innovate')
+    #print('raw pred_keypoint_logits', pred_keypoint_logits.shape)
+    # pred_integral = integral_2d_innovate(better_logits, rois)
+    # hnorm_2d = pred_integral['probabilitymap']
+    # print('confirm shape after 2d integral ', pred_integral['pose_2d global'].shape)
+    # #print('valid', valid)
+    # pred_integral_v1 = pred_integral['pose_2d global'].view(N * 6, -1)[valid]
+
+
+    #normalize kps    
+    kp_mean = torch.Tensor([[942.8855, 326.6883],
+        [941.4666, 405.1611],
+        [740.3054, 304.9617],
+        [737.7035, 421.5804],
+        [530.7987, 290.6349],
+        [534.2322, 425.0898]]).cuda()
+
+    kp_std = torch.Tensor([[ 94.6912,  31.1105],
+        [ 96.2150,  31.2903],
+        [ 89.2333,  28.6181],
+        [ 89.7864,  32.5412],
+        [109.8567,  45.1855],
+        [ 92.0391,  33.6960]]).cuda()
+
+    #global mean-std normalization
+    #kps = (kps - kp_mean)/kp_std
+
+    s1, s2 = kps.shape[0], kps.shape[1] #shape
+    print('kps shape before removing invalid for 2d', kps.shape)
+    kps = kps.view(s1*s2, -1)[valid]
+    print('kps removed invalid shape for 2d', kps.shape)
+
+    #print('valid', valid)
+    pred_integral_v1 = pred_integral['pose_2d global'].view(N * 6, -1)[valid]
+    print('pred_integral_v1shape for 2d', pred_integral_v1.shape)
+
+    print('example pred_integral_v1: ', pred_integral_v1[-3:])
+    print('example kps 2d: ', kps[-3:])
+    #print()
+    #print('final kps shape',kps.shape, 'final pred shape', pred_integral.shape)
+    print('min and max of pred_integral_v1', torch.min(pred_integral_v1), torch.max(pred_integral_v1))
+    print('min and max of kps', torch.min(kps), torch.max(kps))
+
+
+    pose2d_loss = torch.nn.functional.mse_loss(pred_integral_v1, kps, reduction = 'sum')
+    print('original pose2d loss ', pose2d_loss)
+
+    if normalizer is None:
+        normalizer = valid.numel()
+    pose2d_loss /= normalizer
+
+    my_normalizer= 720 + 1280 
+    pose2d_loss /= my_normalizer
+
+    
     #
-    # The usage for CocoEval is as follows:
-    #  cocoGt=..., cocoDt=...       # load dataset and results
-    #  E = CocoEval(cocoGt,cocoDt); # initialize CocoEval object
-    #  E.params.recThrs = ...;      # set parameters as desired
-    #  E.evaluate();                # run per image evaluation
-    #  E.accumulate();              # accumulate per image results
-    #  E.summarize();               # display summary metrics of results
-    # For example usage see evalDemo.m and http://mscoco.org/.
-    #
-    # The evaluation parameters are as follows (defaults in brackets):
-    #  imgIds     - [all] N img ids to use for evaluation
-    #  catIds     - [all] K cat ids to use for evaluation
-    #  iouThrs    - [.5:.05:.95] T=10 IoU thresholds for evaluation
-    #  recThrs    - [0:.01:1] R=101 recall thresholds for evaluation
-    #  areaRng    - [...] A=4 object area ranges for evaluation
-    #  maxDets    - [1 10 100] M=3 thresholds on max detections per image
-    #  iouType    - ['segm'] set iouType to 'segm', 'bbox' or 'keypoints'
-    #  iouType replaced the now DEPRECATED useSegm parameter.
-    #  useCats    - [1] if true use category labels for evaluation
-    # Note: if useCats=0 category labels are ignored as in proposal scoring.
-    # Note: multiple areaRngs [Ax2] and maxDets [Mx1] can be specified.
-    #
-    # evaluate(): evaluates detections on every image and every category and
-    # concats the results into the "evalImgs" with fields:
-    #  dtIds      - [1xD] id for each of the D detections (dt)
-    #  gtIds      - [1xG] id for each of the G ground truths (gt)
-    #  dtMatches  - [TxD] matching gt id at each IoU or 0
-    #  gtMatches  - [TxG] matching dt id at each IoU or 0
-    #  dtScores   - [1xD] confidence of each dt
-    #  gtIgnore   - [1xG] ignore flag for each gt
-    #  dtIgnore   - [TxD] ignore flag for each dt at each IoU
-    #
-    # accumulate(): accumulates the per-image, per-category evaluation
-    # results in "evalImgs" into the dictionary "eval" with fields:
-    #  params     - parameters used for evaluation
-    #  date       - date evaluation was performed
-    #  counts     - [T,R,K,A,M] parameter dimensions (see above)
-    #  precision  - [TxRxKxAxM] precision for every evaluation setting
-    #  recall     - [TxKxAxM] max recall for every evaluation setting
-    # Note: precision and recall==-1 for settings with no gt objects.
-    #
-    # See also coco, mask, pycocoDemo, pycocoEvalDemo
-    #
-    # Microsoft COCO Toolbox.      version 2.0
-    # Data, paper, and tutorials available at:  http://mscoco.org/
-    # Code written by Piotr Dollar and Tsung-Yi Lin, 2015.
-    # Licensed under the Simplified BSD License [see coco/license.txt]
-    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm'):
-        '''
-        Initialize CocoEval using coco APIs for gt and dt
-        :param cocoGt: coco object with ground truth annotations
-        :param cocoDt: coco object with detection results
-        :return: None
-        '''
-        if not iouType:
-            print('iouType not specified. use default iouType segm')
-        self.cocoGt   = cocoGt              # ground truth COCO API
-        self.cocoDt   = cocoDt              # detections COCO API
-        self.params   = {}                  # evaluation parameters
-        self.evalImgs = defaultdict(list)   # per-image per-category evaluation results [KxAxI] elements
-        self.eval     = {}                  # accumulated evaluation results
-        self._gts = defaultdict(list)       # gt for evaluation
-        self._dts = defaultdict(list)       # dt for evaluation
-        print('iouType', iouType)
-        self.params = Params(iouType=iouType) # parameters
-        self._paramsEval = {}               # parameters for evaluation
-        self.stats = []                     # result summarization
-        self.ious = {}                      # ious between all gts and dts
-        if not cocoGt is None:
-            self.params.imgIds = sorted(cocoGt.getImgIds())
-            self.params.catIds = sorted(cocoGt.getCatIds())
-
-    def _prepare(self):
-        '''
-        Prepare ._gts and ._dts for evaluation based on params
-        :return: None
-        '''
-        def _toMask(anns, coco):
-            # modify ann['segmentation'] by reference
-            for ann in anns:
-                rle = coco.annToRLE(ann)
-                ann['segmentation'] = rle
-        p = self.params
-        if p.useCats:
-            gts=self.cocoGt.loadAnns(self.cocoGt.getAnnIds(imgIds=p.imgIds, catIds=p.catIds))
-            dts=self.cocoDt.loadAnns(self.cocoDt.getAnnIds(imgIds=p.imgIds, catIds=p.catIds))
-        else:
-            gts=self.cocoGt.loadAnns(self.cocoGt.getAnnIds(imgIds=p.imgIds))
-            dts=self.cocoDt.loadAnns(self.cocoDt.getAnnIds(imgIds=p.imgIds))
-
-        # convert ground truth to mask if iouType == 'segm'
-        if p.iouType == 'segm':
-            _toMask(gts, self.cocoGt)
-            _toMask(dts, self.cocoDt)
-        # set ignore flag
-        for gt in gts:
-            gt['ignore'] = gt['ignore'] if 'ignore' in gt else 0
-            gt['ignore'] = 'iscrowd' in gt and gt['iscrowd']
-            if p.iouType == 'keypoints':
-                gt['ignore'] = (gt['num_keypoints'] == 0) or gt['ignore']
-        self._gts = defaultdict(list)       # gt for evaluation
-        self._dts = defaultdict(list)       # dt for evaluation
-        for gt in gts:
-            self._gts[gt['image_id'], gt['category_id']].append(gt)
-        for dt in dts:
-            self._dts[dt['image_id'], dt['category_id']].append(dt)
-        self.evalImgs = defaultdict(list)   # per-image per-category evaluation results
-        self.eval     = {}                  # accumulated evaluation results
-
-        print('before prepare phase')
-
-        pose3d_gt = list(map(lambda x:x['pose_3d'], gts))
-        pose3d_dt = list(map(lambda x:x['pred_3d_pts'], dts))
-
-        print('cocoeval pose3d_gt shape', torch.Tensor(pose3d_gt).shape)
-        print('cocoeval pose3d_gt sample', torch.Tensor(pose3d_gt)[0])
-
-        print('cocoeval pose3d_dt shape', torch.Tensor(pose3d_dt).shape)
-        print('cocoeval pose3d_dt sample', torch.Tensor(pose3d_dt)[0])
-
-        self.gt_cnt = len(pose3d_gt)
-
-    def evaluate(self):
-        '''
-        Run per image evaluation on given images and store results (a list of dict) in self.evalImgs
-        :return: None
-        '''
-        tic = time.time()
-        print('Running per image evaluation...')
-        p = self.params
-        # add backward compatibility if useSegm is specified in params
-        if not p.useSegm is None:
-            p.iouType = 'segm' if p.useSegm == 1 else 'bbox'
-            print('useSegm (deprecated) is not None. Running {} evaluation'.format(p.iouType))
-        print('Evaluate annotation type *{}*'.format(p.iouType))
-        p.imgIds = list(np.unique(p.imgIds))
-        if p.useCats:
-            p.catIds = list(np.unique(p.catIds))
-        p.maxDets = sorted(p.maxDets)
-        self.params=p
-
-        self._prepare()
-        # loop through images, area range, max detection number
-        catIds = p.catIds if p.useCats else [-1]
-
-        if p.iouType == 'segm' or p.iouType == 'bbox':
-            computeIoU = self.computeIoU
-        elif p.iouType == 'keypoints':
-            computeIoU = self.computeOks
-        self.ious = {(imgId, catId): computeIoU(imgId, catId) \
-                        for imgId in p.imgIds
-                        for catId in catIds}
-
-        evaluateImg = self.evaluateImg
-        maxDet = p.maxDets[-1]
-
-        global _F_PCK_SCORE1, _F_PCK_SCORE2, _BEST_3D_PRED_POSES, cnt, all_cnt
-
-        _F_PCK_SCORE1, _F_PCK_SCORE2 = 0,0
-        _BEST_3D_PRED_POSES = []
-        all_cnt = 0
-        cnt = 0
-
-        print('what are these p.areaRng ? ', p.areaRng)
-        self.evalImgs = [evaluateImg(imgId, catId, areaRng, maxDet)
-                 for catId in catIds
-                 for areaRng in p.areaRng
-                 for imgId in p.imgIds
-             ]
+    # my_normalizer= 720 + 1280 
+    # pose2d_loss /= my_normalizer
 
 
-        print('-------------  Outside evaluateImg function (variables resetted)  ---------------')
+    
 
-        print('len evaluated images: ', len(self.evalImgs ))
-        print('_F_PCK_SCORE1: ', _F_PCK_SCORE1)
-        print('_F_PCK_SCORE2: ', _F_PCK_SCORE2)
-        #print('len(_BEST_3D_PRED_POSES): ', len(_BEST_3D_PRED_POSES))
-        print('cnt: ', cnt)
-        print('all_cnt: ', all_cnt)
-        print('Joe proposed Score 1: ', _F_PCK_SCORE1/cnt)
-        print('Joe proposed Score 2: ', _F_PCK_SCORE2/cnt)
+    pred_3d = integral_3d_innovate(pred_keypoint_logits, indices = indices)
+    print('output shape from 3d pred_integral', pred_3d['pose_3d'].shape) # (1,k,3)
+    print('what pred pose3d looks like', pred_3d['pose_3d'][0])
+    
+    pose3d_gt = p3d.reshape(p3d.shape[0],-1) #N,18
+    #pose3d_gt = pose3d_gt[0].unsqueeze(0) #(1,18) pick only 1 since they are duplicates
+
+
+
+    print('Is pose3d_gt (N,18)?', pose3d_gt.shape) #3,18
+
+    #Normalize 3d GT by mean-std relative to the hip (Project 2)
+    # mean_3d, std_3d = (torch.Tensor([   90.4226,   -99.0404,   113.7033,   -90.4226,    99.0404,  -113.7033,
+    #     -1257.6155, -1297.9100, -1227.4360, -1220.5818, -1329.1154, -1301.5215,
+    #       797.3640,   756.3050,   403.3004,   410.9879,   -14.6912,    16.2920]).cuda(),
+    # torch.Tensor([ 15.5230,  19.4742,  25.6194,  15.5230,  19.4742,  25.6194, 183.8460,
+    #     172.6190, 212.3050, 218.0117, 192.0247, 208.0867, 178.1015, 186.4496,
+    #     160.7282, 160.8192, 163.5823, 152.6740]).cuda())
+
+    #Normalize 3d GT by mean-std relative to the hip (Project 3)
+    mean_3d, std_3d = (torch.Tensor([   90.4712,  -100.0514,   113.9451,   -90.4712,   100.0514,  -113.9451,
+        -1272.1144, -1312.7323, -1242.2559, -1237.8091, -1341.8601, -1318.6337,
+          801.4175,   760.1226,   408.5650,   416.2698,    -7.5783,    23.3722]).cuda(),
+    torch.Tensor([ 15.1813,  18.4730,  25.2961,  15.1813,  18.4730,  25.2961, 182.1320,
+        169.5995, 213.0917, 218.8727, 193.2803, 208.0172, 176.0335, 183.7734,
+        158.1118, 158.2999, 160.9153, 149.7474]).cuda())
+
+
+    #Normalize relative to the hip
+    pose3d_gt = pose3d_gt.view(pose3d_gt.shape[0], 6,3) #N,6,3
+    midhip = (pose3d_gt[:,0] + pose3d_gt[:,1])/2
+
+    print('pose3d_gt shape, midhip shape', pose3d_gt.shape, midhip.unsqueeze(1).shape)
+    pose3d_gt = pose3d_gt - midhip.unsqueeze(1)
+    pose3d_gt = pose3d_gt.view(pose3d_gt.shape[0], -1)
+
+    pose3d_gt_raw = pose3d_gt
+
+    print('Is pose3d_gt (N,18)?', pose3d_gt.shape) #N,18
+
+    pose3d_gt_raw = pose3d_gt
+    pose3d_gt = (pose3d_gt - mean_3d)/std_3d
+    print('normalized 3d pose GT sample: ', pose3d_gt[0])
+
+    pose3d_gt = pose3d_gt.reshape(pose3d_gt.shape[0], 6, 3)
+    #pose3d_gt_visual = pose3d_gt
+
+    # pose3d_loss = torch.nn.functional.mse_loss(pred_3d_valid, pose3d_gt, reduction = 'sum')
+    pred_3d_star = pred_3d['pose_3d'].view(-1, 3) #[valid]
+    pose3d_gt_star = pose3d_gt.view(-1, 3) #[valid]
+
+    all_nan = torch.isnan(pose3d_gt_star)
+
+    pose3d_loss = torch.nn.functional.mse_loss(pred_3d_star[~all_nan], pose3d_gt_star[~all_nan])
+    #pose3d_loss = torch.nn.functional.mse_loss(pred_3d_star, pose3d_gt_star)   
+
+    #print('original pose3d loss ', pose2d_loss)
+    
+
+    # if normalizer is None:
+    #     normalizer = valid.numel()
+    # pose3d_loss /= 3
+
+
+    #consider all valid
+    #pose3d_loss = torch.nn.functional.mse_loss(pred_3d, pose3d_gt)
+    # try:
+    #   print('pose3d_LOSS: ', pose3d_loss)
+    # except:
+    #   print('pose3d_loss', torch.nn.functional.mse_loss(pred_3d, pose3d_gt))
+
+    ##############################################################
+
+    #comb_loss = pose2d_loss*0.50 + pose3d_loss*0.50  #(Good 0.6011)
+    #comb_loss = pose2d_loss*1.0 + pose3d_loss*0.3 (diverged)
+    #comb_loss = pose2d_loss*0.70 + pose3d_loss*0.70  #(diverged)
+    comb_loss = pose2d_loss*0.70 + pose3d_loss*0.30  #(Good 0.6011)
+    #comb_loss = pose2d_loss*0.30 + pose3d_loss*0.70
+
+    print('normalizer amount: ', normalizer)
+    print('normalized 2d loss: ', pose2d_loss)
+    print('normalized 3d loss: ', pose3d_loss)
+    print('combined_loss:', comb_loss)
+
+    global _LOSSES_2D, _LOSSES_3D, _LOSSES_COMB
+    _LOSSES_2D.append(pose2d_loss)
+    _LOSSES_3D.append(pose3d_loss)
+    _LOSSES_COMB.append(comb_loss)
+    
+    print()
+    print()
+    print()
+    print()
+    print()
+
+    # # plot progress
+    #only display if pose 3d GT has no nans 
+    if np.sum(np.isnan(pose3d_gt.detach().cpu().numpy())) == 0 :
+    #if 0:
+        # clear figures for a new update
+        fig=plt.figure(figsize=(20, 5), dpi= 80, facecolor='w', edgecolor='k')
+        axes=fig.subplots(1,6)
+
+        axs=[]
+        f = plt.figure(figsize=(10,10))
+        axs.append(f.add_subplot(2,3,1, projection='3d'))
+        axs.append(f.add_subplot(2,3,2, projection='3d'))
+        axs.append(f.add_subplot(2,3,3, projection='3d'))
+
+        #axs_new = plt.figure(figsize=(10,10)).add_subplot(1,1,1)
+
+
+        #un-normalize for display 3D
+        mean_3d, std_3d = mean_3d.view(6,3), std_3d.view(6,3)
+
+        pred_3d = pred_3d['pose_3d']
+
+        pred_3d = (pred_3d * std_3d) + mean_3d
+        pred_3d = pred_3d.view(-1, 6,3)
+
+
+        img = '/content/drive/My Drive/black_img2.png'
+        img = cv2.imread(img)
+        img = cv2.resize(img, (720, 1280))
+        img = np.array(img)
+        kps_origin = kps_origin.view(-1, 6,2)
 
         
-        print('len p.imgIds: ', len(p.imgIds))
-        print('len p.areaRng: ', len(p.areaRng))
-        print('len catIds: ', len(catIds))
-        print('----------------------------------------------------------------------------------')
+        custom_plotting.plot_3Dpose(axs[0], pose3d_gt_raw[0].detach().cpu(),  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
+        #custom_plotting.plot_3Dpose(axs[1], pose3d_gt_raw[1].detach().cpu(),  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
+        #custom_plotting.plot_3Dpose(axs[2], pose3d_gt_raw[2].detach().cpu(),  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
+        custom_plotting.plot_3Dpose(axs[1], pred_3d[0].detach().cpu(),  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
+        try:
+            custom_plotting.plot_3Dpose(axs[2], pred_3d[1].detach().cpu(),  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
+            custom_plotting.plot_3Dpose(axs[3], pred_3d[2].detach().cpu(),  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
+        except:
+            pass
 
+        custom_plotting.plotPoseOnImage(kps_origin[0].detach().cpu(), img, ax=axes[4])
+        custom_plotting.plotPoseOnImage(pred_integral['pose_2d global'][0].detach().cpu().float(), img, ax=axes[5])
         
 
-        self._paramsEval = copy.deepcopy(self.params)
-        toc = time.time()
-        print('DONE (t={:0.2f}s).'.format(toc-tic))
+        #custom_plotting.plot_2Dpose(axs[0], pose3d_gt[0].detach().cpu().T,  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
+        #custom_plotting.plot_2Dpose(axs[0], pose3d_gt[0].detach().cpu().T,  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
 
-
-    def computeIoU(self, imgId, catId):
-        p = self.params
-        if p.useCats:
-            gt = self._gts[imgId,catId]
-            dt = self._dts[imgId,catId]
-        else:
-            gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
-            dt = [_ for cId in p.catIds for _ in self._dts[imgId,cId]]
-        if len(gt) == 0 and len(dt) ==0:
-            return []
-        inds = np.argsort([-d['score'] for d in dt], kind='mergesort')
-        dt = [dt[i] for i in inds]
-        if len(dt) > p.maxDets[-1]:
-            dt=dt[0:p.maxDets[-1]]
-
-        if p.iouType == 'segm':
-            g = [g['segmentation'] for g in gt]
-            d = [d['segmentation'] for d in dt]
-        elif p.iouType == 'bbox':
-            g = [g['bbox'] for g in gt]
-            d = [d['bbox'] for d in dt]
-        else:
-            raise Exception('unknown iouType for iou computation')
-
-        # compute iou between each dt and gt region
-        iscrowd = [int(o['iscrowd']) for o in gt]
-        ious = maskUtils.iou(d,g,iscrowd)
-        return ious
-
-    def computeOks(self, imgId, catId):
-        p = self.params
-        # dimention here should be Nxm
-        gts = self._gts[imgId, catId]
-        dts = self._dts[imgId, catId]
-        inds = np.argsort([-d['score'] for d in dts], kind='mergesort')
-        dts = [dts[i] for i in inds]
-        if len(dts) > p.maxDets[-1]:
-            dts = dts[0:p.maxDets[-1]]
-        # if len(gts) == 0 and len(dts) == 0:
-        if len(gts) == 0 or len(dts) == 0:
-            return []
-        ious = np.zeros((len(dts), len(gts)))
-        #sigmas = np.array([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62,.62, 1.07, 1.07, .87, .87, .89, .89])/10.0
-        #coco sigmas for hips, knees, & ankles
-        sigmas = p.kpt_oks_sigmas
-
-        vars = (sigmas * 2)**2
-        k = len(sigmas)
-        # compute oks between each detection and ground truth object
-        for j, gt in enumerate(gts):
-            # create bounds for ignore regions(double the gt bbox)
-            g = np.array(gt['keypoints'])
-            xg = g[0::3]; yg = g[1::3]; vg = g[2::3]
-            k1 = np.count_nonzero(vg > 0)
-            bb = gt['bbox']
-            x0 = bb[0] - bb[2]; x1 = bb[0] + bb[2] * 2
-            y0 = bb[1] - bb[3]; y1 = bb[1] + bb[3] * 2
-            for i, dt in enumerate(dts):
-                d = np.array(dt['keypoints'])
-                xd = d[0::3]; yd = d[1::3]
-                if k1>0:
-                    # measure the per-keypoint distance if keypoints visible
-                    dx = xd - xg
-                    dy = yd - yg
-                else:
-                    # measure minimum distance to keypoints in (x0,y0) & (x1,y1)
-                    z = np.zeros((k))
-                    dx = np.max((z, x0-xd),axis=0)+np.max((z, xd-x1),axis=0)
-                    dy = np.max((z, y0-yd),axis=0)+np.max((z, yd-y1),axis=0)
-                #print("dx",dx, 'dy',dy," gt['area']", gt['area'], 'vars', vars)
-                e = (dx**2 + dy**2) / vars / (gt['area']+np.spacing(1)) / 2
-                if k1 > 0:
-                    e=e[vg > 0]
-                ious[i, j] = np.sum(np.exp(-e)) / e.shape[0]
-        #print(ious)
-        return ious
-
-    def pck(self, target, pred, treshold=100):
-        '''
-        Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm/100mm)
-
-        Arguments:
-        target: A tensor of shape (1, 18) : global values relative to hip in our case
-        pred: A tensor of shape (1, 18) : global values relative to hip in our case
-
-        Returns:
-            pck_score: A scalar value btw 0 and 1
-        '''
-        diff = torch.abs(target - pred)
-        count = torch.sum(diff < treshold, dtype=torch.float)
-        pck_score = count/ (target.shape[0]*target.shape[1])
-        return pck_score
-
-    def mpjpe_error(self, inps, out):
-        '''
-        MPJPE ERROR
-
-        Arguments:
-        target: A tensor of shape (3, 6) : global values relative to hip in our case
-        pred: A tensor of shape (3, 6) : global values relative to hip in our case
-
-        Returns:
-            mpjpe_erro: A scalar value
-        '''
-        error = sum(((out-inps)**2).sum(dim=0).sqrt())/inps.shape[1]
-        return error
-
-    def evaluateImg(self, imgId, catId, aRng, maxDet):
-        '''
-        perform evaluation for single category and image
-        :return: dict (single image results)
-        '''
-        p = self.params
-        catIds = p.catIds if p.useCats else [-1]
-        print('len p.imgIds: ', len(p.imgIds))
-        print('len p.areaRng: ', len(p.areaRng))
-        print('len catIds: ', len(catIds))
-
-        print(f'imgId:{imgId}, catId:{catId}, aRng:{aRng}, maxDet:{maxDet}')
-        if p.useCats:
-            gt = self._gts[imgId,catId]
-            dt = self._dts[imgId,catId]
-        else:
-            gt = [_ for cId in p.catIds for _ in self._gts[imgId,cId]]
-            dt = [_ for cId in p.catIds for _ in self._dts[imgId,cId]]
-        if len(gt) == 0 and len(dt) ==0:
-            return None
-
-        for g in gt:
-            if g['ignore'] or (g['area']<aRng[0] or g['area']>aRng[1]):
-                g['_ignore'] = 1
-            else:
-                g['_ignore'] = 0
-
-        # sort dt highest score first, sort gt ignore last
-        gtind = np.argsort([g['_ignore'] for g in gt], kind='mergesort')
-        gt = [gt[i] for i in gtind]
-        dtind = np.argsort([-d['score'] for d in dt], kind='mergesort')
-
-        print('dtind length, some example 2d scores', len(dtind), dtind[0:10])
-        dt = [dt[i] for i in dtind[0:maxDet]]
-        print('checking dt', dt[0:10])
-
-        iscrowd = [int(o['iscrowd']) for o in gt]
-        # load computed ious
-        ious = self.ious[imgId, catId][:, gtind] if len(self.ious[imgId, catId]) > 0 else self.ious[imgId, catId]
-
-        T = len(p.iouThrs)
-        G = len(gt)
-        D = len(dt)
-        gtm  = np.zeros((T,G))
-        dtm  = np.zeros((T,D))
-        gtIg = np.array([g['_ignore'] for g in gt])
-        dtIg = np.zeros((T,D))
-
-        print('len of dt and gt before for loops', len(dt), len(gt))
-        if not len(ious)==0:
-            for tind, t in enumerate(p.iouThrs):
-                print('tind, t', tind, t)
-                for dind, d in enumerate(dt):
-                    # information about best match so far (m=-1 -> unmatched)
-                    iou = min([t,1-1e-10])
-                    print('iou', iou)
-                    m   = -1
-                    for gind, g in enumerate(gt):
-                        # if this gt already matched, and not a crowd, continue
-                        if gtm[tind,gind]>0 and not iscrowd[gind]:
-                            continue
-                        # if dt matched to reg gt, and on ignore gt, stop
-                        if m>-1 and gtIg[m]==0 and gtIg[gind]==1:
-                            break
-                        # continue to next gt unless better match made
-                        if ious[dind,gind] < iou:
-                            continue
-                        # if match successful and best so far, store appropriately
-                        iou=ious[dind,gind]
-                        m=gind
-                    # if match made store id of match for both dt and gt
-                    if m ==-1:
-                        continue
-                    dtIg[tind,dind] = gtIg[m]
-                    dtm[tind,discorend]  = gt[m]['id']
-                    gtm[tind,m]     = d['id']
-        # set unmatched detections outside of area range to ignore
-        a = np.array([d['area']<aRng[0] or d['area']>aRng[1] for d in dt]).reshape((1, len(dt)))
-        dtIg = np.logical_or(dtIg, np.logical_and(dtm==0, np.repeat(a,T,0)))
-
-
-        ############ 3D Evaluation ###############################
-        print('performing 3D Evaluation')
-        GT  = torch.Tensor(list(map(lambda x:x['pose_3d'], gt)))
-        DT  = torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt)))
-        print('GT 3d shape', GT.shape)
-        print('DT 3d shape', DT.shape)
-
-        print(gt[0])
-        print(dt[0])
-
-        GT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], gt))) #(x,y, visibility)
-        DT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], dt))) #(x,y,score)             
-        print('GT 2d shape', GT_2d.shape)
-        print('DT 2d shape', DT_2d.shape)
-
-
-        #Normalize relative to the hip
-        #print('GT shape', GT.shape)
-        GT = GT.view(GT.shape[0], 6,3) #1,6,3
-        midhip = (GT[:,0] + GT[:,1])/2
-
-        print('GT shape, midhip shape', GT.shape, midhip.unsqueeze(1).shape)
-        GT = GT - midhip.unsqueeze(1)
-        #GT = GT.view(GT.shape[0], -1)
-
-        GT = GT.view(GT.shape[0], -1) #1,18
-
-        #Normalize 3d GT by mean-std relative to the hip
-        mean_3d, std_3d = (torch.Tensor([   90.4226,   -99.0404,   113.7033,   -90.4226,    99.0404,  -113.7033,
-            -1257.6155, -1297.9100, -1227.4360, -1220.5818, -1329.1154, -1301.5215,
-              797.3640,   756.3050,   403.3004,   410.9879,   -14.6912,    16.2920]),
-        torch.Tensor([ 15.5230,  19.4742,  25.6194,  15.5230,  19.4742,  25.6194, 183.8460,
-            172.6190, 212.3050, 218.0117, 192.0247, 208.0867, 178.1015, 186.4496,
-            160.7282, 160.8192, 163.5823, 152.6740]))
-
+        # custom_plotting.plot_2Dpose(axs_new, pred_integral['pose_2d global'][0].detach().cpu().T,bones=bones_ego, color_order=color_order_ego)
+        # custom_plotting.plot_3Dpose(axs[0], pose3d_gt_raw[0].detach().cpu().T,  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
+        # custom_plotting.plot_3Dpose(axs[1], pred_3d[0].detach().cpu(),  bones=bones_ego, color_order=color_order_ego,flip_yz=False)
         
-        print('Global 3d GT sample in Evaluation: ', GT[0:5])
+        # img = '/content/black_img2.png'
+        # img = cv2.imread(img)
+        # img = cv2.resize(img, (720, 1280))
+        # img = np.array(img)
 
-        print('last gt sample', GT[0])
-        print('last dt sample', DT[0])
-        print()
-        print('last gt shape', GT.shape)
-        print('last dt shape', DT.shape)
+        # custom_plotting.plotPoseOnImage(pred_integral['pose_2d global'][-1].detach().cpu(), img, ax=plt)
+
+        axes[0].plot(_LOSSES_2D)
+        axes[0].set_yscale('log')
+        # clear output window and diplay updated figure
+        axes[1].plot(_LOSSES_3D)
+        axes[1].set_yscale('log')
+
+        axes[2].plot(_LOSSES_COMB)
+        axes[2].set_yscale('log')
+
+        axes[3].imshow(hnorm_2d[0][0].detach().cpu()) #first joint
+
+        display.clear_output(wait=True)
+        #display.display(plt.gcf())
+        plt.show()
+        #plt.show()
+        plt.close()
+        #display.display()
+        #print("Epoch {}, iteration {} of {} ({} %), loss={}".format(e, i, len(train_loader), 100*i//len(train_loader), losses[-1]))
+
+    return comb_loss
 
 
-        best_score_3d = float('-inf')
-        best_score_2d = float('-inf')
-        least_error_3d = float('inf')
-        #all_nan = torch.isnan(GT)
+def keypoint_rcnn_inference(pred_keypoint_logits, pred_instances):
+    """
+    Post process each predicted keypoint heatmap in `pred_keypoint_logits` into (x, y, score)
+        and add it to the `pred_instances` as a `pred_keypoints` field.
+    Args:
+        pred_keypoint_logits (Tensor): A tensor of shape (R, K, S, S) where R is the total number
+           of instances in the batch, K is the number of keypoints, and S is the side length of
+           the keypoint heatmap. The values are spatial logits.
+        pred_instances (list[Instances]): A list of N Instances, where N is the number of images.
+    Returns:
+        None. Each element in pred_instances will contain an extra "pred_keypoints" field.
+            The field is a tensor of shape (#instance, K, 3) where the last
+            dimension corresponds to (x, y, score).
+            The scores are larger than 0.
+    """
+    # flatten all bboxes from all images together (list[Boxes] -> Rx4 tensor)
+    #bboxes_flat = cat([b.pred_boxes.tensor for b in pred_instances], dim=0)
 
-        global _F_PCK_SCORE1, _F_PCK_SCORE2, _BEST_3D_PRED_POSES, cnt, all_cnt
+    #keypoint_results = heatmaps_to_keypoints(pred_keypoint_logits.detach(), bboxes_flat.detach())
+    #num_instances_per_image = [len(i) for i in pred_instances]
+    #keypoint_results = keypoint_results[:, :, [0, 1, 3]].split(num_instances_per_image, dim=0)
+    
+    if pred_keypoint_logits.shape[0] == 0 :
+        return None
 
-        DT = torch.Tensor(DT)
+    # flatten all GT bboxes from all images together (list[Boxes] -> Rx4 tensor)
+    print('check for box rois inference: ', [b for i, b in enumerate(pred_instances) if i < 3])
+    bboxes_flat = cat([b.pred_boxes.tensor for b in pred_instances], dim=0)
+    pred_rois = bboxes_flat.detach()
 
-        #mean detection
-        mean_dt = DT.mean(dim=0) 
-        mean_dt = torch.Tensor(mean_dt).view(1,-1)
-        score_3d_mean = self.pck(GT, mean_dt)
-        loss_mean = torch.nn.functional.mse_loss(GT, mean_dt)
-        target = GT.view(3,6); pred = mean_dt.view(3,6)
-        error_3d_mean = self.mpjpe_error(target, pred)
+    #print('pred_keypoint_logits', pred_keypoint_logits)
+    out1 = integral_2d_innovate(pred_keypoint_logits, pred_rois)
+    heatmap_norm = out1['probabilitymap']
+    print('2d heatmap_norm shape', heatmap_norm.shape)
+    print('2d hip heatmap_norm', heatmap_norm[0][0][0])
+    print('2d heatmap prob sum to 1: ', torch.sum(heatmap_norm[0][0]))
+    #scores for the ankle etc
+    scores = torch.max(torch.max(heatmap_norm, dim = -1)[0], dim = -1)[0]
+    print('inference: min score', torch.min(scores))
+    print('inference: max score', torch.max(scores))
+    #unstack
+    i_, j_  = torch.unbind(out1['pose_2d global'], dim=2)
+    #instance, K, 3) 3-> (x, y, score)
+    keypoint_results = torch.stack((i_,j_, scores),dim=2) #heatmap = heatmap_[:,0:6,:,:]
+    keypoint_results_prev = heatmaps_to_keypoints(pred_keypoint_logits[:,0:6,:,:].detach(), bboxes_flat.detach())
 
-        #median detection
-        med_dt = DT.median(dim=0)[0] 
-        med_dt = torch.Tensor(med_dt).view(1,-1)
-        score_3d_med = self.pck(GT, med_dt)
-        loss_med = torch.nn.functional.mse_loss(GT, med_dt)
-        target = GT.view(3,6); pred = med_dt.view(3,6)
-        error_3d_med = self.mpjpe_error(target, pred)
+    #print('pred keypoint_results before split', keypoint_results.shape)
+    num_instances_per_image = [len(i) for i in pred_instances]
+    # 0 for x, 1 for y, 3 for scores in heatmaps_to_keypoints function
+    keypoint_results = keypoint_results[:, :, :].split(num_instances_per_image, dim=0)
+    keypoint_results_prev = keypoint_results_prev[:, :, [0, 1, 3]].split(num_instances_per_image, dim=0)
 
-        print('mean 3d error in {} instances'.format(len(DT)), error_3d_mean)
-        print('correspodning 3d PCK score in {} instances'.format(len(DT)), score_3d_mean)
-        print('loss mean: ', loss_mean)
+    ############ 3D #########################
 
-        print('median 3d error in {} instances'.format(len(DT)), error_3d_med)
-        print('correspodning 3d PCK score in {} instances'.format(len(DT)), score_3d_med)
-        print('loss median: ', loss_med)
+    out2 = integral_3d_innovate(pred_keypoint_logits)
+    heatmap_norm = out2['probabilitymap']
+    print('3d heatmap_norm shape', heatmap_norm.shape)
+    print('3d hip heatmap_norm', heatmap_norm[0][0][0])
+    print('3d heatmap prob sum to 1: ', torch.sum(heatmap_norm[0][0]))
+    #scores for the ankle etc
+    #scores = torch.max(torch.max(heatmap_norm, dim = -1)[0], dim = -1)[0]
+    #print('scores: ', scores)
+    #max_ = torch.max(torch.max(heatmap, dim=-1)[0], dim=-1, keepdim=True)[0].unsqueeze(-1) #soving the numerical problem
+    #unstack
+    #i_, j_,z_  = torch.unbind(out2['pose_3d'], dim=2)
+    #instance, K, 3) 3-> (x, y, score)
+    #pose3d_results = torch.stack((i_,j_, scores),dim=2)
+    
 
-        _F_PCK_SCORE1 += score_3d_mean
-        _F_PCK_SCORE2 += score_3d_med
-        #_BEST_3D_PRED_POSES.append(best_3d)
+    # #print('pred keypoint_results before split', keypoint_results.shape)
+    # num_instances_per_image = [len(i) for i in pred_instances]
+    # print('num_instances_per_image', num_instances_per_image)# same as no of images
+    # #keypoint_results = keypoint_results[:, :, [0, 1, 3]].split(num_instances_per_image, dim=0)
+    # keypoint_results = keypoint_results[:, :, :].split(num_instances_per_image, dim=0)
+
+    # 3D
+    pose3d_results = out2['pose_3d']
+    print('output 3d shape in testing', pose3d_results.shape)
+    #print('min and max of out3d in testing', torch.min(pred_3d), torch.max(pred_3d))
+    pred_3d  = pose3d_results[:, :].split(num_instances_per_image, dim=0)
+
+    cnt=0 
+    for keypoint_results_per_image1, keypoint_results_per_image2, pred_3d_results_per_image, instances_per_image in zip(keypoint_results, keypoint_results_prev, pred_3d, pred_instances):
+        
+
+        print('keypoint_results_per_image1', keypoint_results_per_image1.shape)
+        print('keypoint_results_per_image2', keypoint_results_per_image2.shape)
+        print('pred_3d_results_per_image', pred_3d_results_per_image.shape)
+
+        print('scores from keypoint_results_per_image1: ', keypoint_results_per_image1[0, :, 2])
+        print('scores from keypoint_results_per_image2: ', keypoint_results_per_image2[0, :, 2])
+
+        keypoint_results_per_image1[:, :, 2] = keypoint_results_per_image2[:, :, 2] 
+
+        instances_per_image.pred_keypoints = keypoint_results_per_image1#.unsqueeze(0)
+        instances_per_image.pred_3d_pts = pred_3d_results_per_image #.unsqueeze(0)
+        print('pred_3d_results_per_image sample', pred_3d_results_per_image[0])
+
         cnt+=1
 
-        # for i, (dt_, dt_2d) in enumerate(zip(DT, DT_2d)):
-        # #for i, dt_ in enumerate(DT):
-        #     dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
-        #     dt_g = torch.Tensor(dt_).view(1,-1)
+        #instances_per_image.pred_keypoints = keypoint_results_per_image#.squeeze(0)
+        #instances_per_image.pred_3d_pts = pred_3d_results_per_image#.squeeze(0)
+        #print('pred_3d_results_per_image sample', pred_3d_results_per_image[0])
 
-        #     #consider only valid
-        #     print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
+    print('{} images in pred_instances (testing)'.format(cnt))
 
-        #     score_3d = self.pck(GT, dt_g)
-        #     score_2d = self.pck(GT_2d, dt_2d)
-        #     #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
-        #     loss = torch.nn.functional.mse_loss(dt_, GT)
-        #     loss_2 = torch.nn.functional.mse_loss(GT_2d, dt_2d)
+class BaseKeypointRCNNHead(nn.Module):
+    """
+    Implement the basic Keypoint R-CNN losses and inference logic described in :paper:`Mask R-CNN`.
+    """
 
-        #     target = GT.view(3,6); pred = dt_.view(3,6)
-        #     error_3d = self.mpjpe_error(target, pred)
-
-        #     target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
-        #     error_2d = self.mpjpe_error(target, pred)
-
-        #     print(i, 'pck score on 2d', score_2d)
-        #     print(i, 'pck score on 3d', score_3d)
-        #     print(i, 'mse loss 3d', loss)
-        #     print(i, 'mse loss 2d', loss_2)
-        #     print(i, 'mpjpe 3d error', error_3d)
-        #     print(i, 'mpjpe 2d error', error_2d)
-
-        #     all_cnt+=1
-
-        #     #corresponding 3D detected using best 2D
-        #     # if score_2d > best_score_2d:
-        #     #     print('yes')
-        #     #     best_score_2d = score_2d
-        #     #     best_pred_2d = dt_2d
-        #     #     best_index = i
-        #     #     best_score_3d = score_3d
-        #     #     best_3d = dt_g
-        #     #     report_error_3d = error_3d
-        #     #     report_error_2d = error_2d
-        #     #     best_loss = loss
-        #     #     best_loss_2 = loss_2
-
-        #     #3D best
-        #     if error_3d < least_error_3d:
-        #         least_error_3d = error_3d
-        #         best_index = i
-        #         best_score_3d = score_3d
-        #         best_3d = dt_g
-
-        #         #report_error_3d = error_3d
-        #         report_error_2d = error_2d
-                
-        #         best_loss = loss
-        #         best_loss_2 = loss_2
-
-            
-
-            # if score > best_score:
-            #     best_score = score
-            #     best_pred = dt_g
-
-        # print('selected least 3d error in {} instances'.format(len(DT)), least_error_3d)
-        # print('correspodning 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
-        # print('correspodning 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
-        # #print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
-        # print('loss 3d: ', best_loss)
-        # print('loss 2d : ', best_loss_2)
-
-        # _F_PCK_SCORE += best_score_3d
-        # _BEST_3D_PRED_POSES.append(best_3d)
-        # cnt+=1
-
-        print(f'cnt:{cnt} all_cnt:{all_cnt}')
-
-        #print('3D pck score for this image: {}', report_error_3d)
-
-
-        # store results for given image and category
-        return {
-                'image_id':     imgId,
-                'category_id':  catId,
-                'aRng':         aRng,
-                'maxDet':       maxDet,
-                'dtIds':        [d['id'] for d in dt],
-                'gtIds':        [g['id'] for g in gt],
-                'dtMatches':    dtm,
-                'gtMatches':    gtm,
-                'dtScores':     [d['score'] for d in dt],
-                'gtIgnore':     gtIg,
-                'dtIgnore':     dtIg,
-            }
-
-    def accumulate(self, p = None):
-        '''
-        Accumulate per image evaluation results and store the result in self.eval
-        :param p: input params for evaluation
-        :return: None
-        '''
-        print('Accumulating evaluation results...')
-        tic = time.time()
-        if not self.evalImgs:
-            print('Please run evaluate() first')
-        # allows input customized parameters
-        if p is None:
-            p = self.params
-        p.catIds = p.catIds if p.useCats == 1 else [-1]
-        T           = len(p.iouThrs)
-        R           = len(p.recThrs)
-        K           = len(p.catIds) if p.useCats else 1
-        A           = len(p.areaRng)
-        M           = len(p.maxDets)
-
-        print('T, R, K,A, M', T, R, K,A, M)
-
-        precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
-        recall      = -np.ones((T,K,A,M))
-        scores      = -np.ones((T,R,K,A,M))
-
-        # create dictionary for future indexing
-        _pe = self._paramsEval
-        catIds = _pe.catIds if _pe.useCats else [-1]
-        setK = set(catIds)
-        setA = set(map(tuple, _pe.areaRng))
-        setM = set(_pe.maxDets)
-        setI = set(_pe.imgIds)
-        # get inds to evaluate
-        k_list = [n for n, k in enumerate(p.catIds)  if k in setK]
-        m_list = [m for n, m in enumerate(p.maxDets) if m in setM]
-        a_list = [n for n, a in enumerate(map(lambda x: tuple(x), p.areaRng)) if a in setA]
-        i_list = [n for n, i in enumerate(p.imgIds)  if i in setI]
-        I0 = len(_pe.imgIds)
-        A0 = len(_pe.areaRng)
-        # retrieve E at each category, area range, and max number of detections
-        for k, k0 in enumerate(k_list):
-            Nk = k0*A0*I0
-            for a, a0 in enumerate(a_list):
-                Na = a0*I0
-                for m, maxDet in enumerate(m_list):
-                    E = [self.evalImgs[Nk + Na + i] for i in i_list]
-                    E = [e for e in E if not e is None]
-                    if len(E) == 0:
-                        continue
-                    dtScores = np.concatenate([e['dtScores'][0:maxDet] for e in E])
-
-                    # different sorting method generates slightly different results.
-                    # mergesort is used to be consistent as Matlab implementation.
-                    inds = np.argsort(-dtScores, kind='mergesort')
-                    dtScoresSorted = dtScores[inds]
-
-                    dtm  = np.concatenate([e['dtMatches'][:,0:maxDet] for e in E], axis=1)[:,inds]
-                    dtIg = np.concatenate([e['dtIgnore'][:,0:maxDet]  for e in E], axis=1)[:,inds]
-                    gtIg = np.concatenate([e['gtIgnore'] for e in E])
-                    npig = np.count_nonzero(gtIg==0 )
-                    if npig == 0:
-                        continue
-                    tps = np.logical_and(               dtm,  np.logical_not(dtIg) )
-                    fps = np.logical_and(np.logical_not(dtm), np.logical_not(dtIg) )
-
-                    tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
-                    fp_sum = np.cumsum(fps, axis=1).astype(dtype=np.float)
-                    for t, (tp, fp) in enumerate(zip(tp_sum, fp_sum)):
-                        tp = np.array(tp)
-                        fp = np.array(fp)
-                        nd = len(tp)
-                        rc = tp / npig
-                        pr = tp / (fp+tp+np.spacing(1))
-                        q  = np.zeros((R,))
-                        ss = np.zeros((R,))
-
-                        if nd:
-                            recall[t,k,a,m] = rc[-1]
-                        else:
-                            recall[t,k,a,m] = 0
-
-                        # numpy is slow without cython optimization for accessing elements
-                        # use python array gets significant speed improvement
-                        pr = pr.tolist(); q = q.tolist()
-
-                        for i in range(nd-1, 0, -1):
-                            if pr[i] > pr[i-1]:
-                                pr[i-1] = pr[i]
-
-                        inds = np.searchsorted(rc, p.recThrs, side='left')
-                        try:
-                            for ri, pi in enumerate(inds):
-                                q[ri] = pr[pi]
-                                ss[ri] = dtScoresSorted[pi]
-                        except:
-                            pass
-                        precision[t,:,k,a,m] = np.array(q)
-                        scores[t,:,k,a,m] = np.array(ss)
-        self.eval = {
-            'params': p,
-            'counts': [T, R, K, A, M],
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'precision': precision,
-            'recall':   recall,
-            'scores': scores,
-        }
-        toc = time.time()
-        print('DONE (t={:0.2f}s).'.format( toc-tic))
-
-
-    def summarize(self):
-        '''
-        Compute and display summary metrics for evaluation results.
-        Note this functin can *only* be applied on the default parameter setting
-        '''
-        display.clear_output(wait=True)
-
-        #3D Evaluation Final Score
-        global _F_PCK_SCORE1, _F_PCK_SCORE2, _BEST_3D_PRED_POSES, cnt, all_cnt
-        print('_F_PCK_SCORE1', _F_PCK_SCORE1)
-        print('_F_PCK_SCORE2', _F_PCK_SCORE2)
+    @configurable
+    def __init__(self, *, num_keypoints, loss_weight=1.0, loss_normalizer=1.0):
+        """
+        NOTE: this interface is experimental.
+        Args:
+            num_keypoints (int): number of keypoints to predict
+            loss_weight (float): weight to multiple on the keypoint loss
+            loss_normalizer (float or str):
+                If float, divide the loss by `loss_normalizer * #images`.
+                If 'visible', the loss is normalized by the total number of
+                visible keypoints across images.
+        """
+        super().__init__()
+        self.num_keypoints = num_keypoints
+        self.loss_weight = loss_weight
+        assert loss_normalizer == "visible" or isinstance(loss_normalizer, float), loss_normalizer
+        self.loss_normalizer = loss_normalizer
+        #self.linermodel = LinearModel()
+        #self.linermodel.apply(weight_init)
+        #print(">>> total params: {:.2f}M".format(sum(p.numel() for p in self.linermodel.parameters()) / 1000000.0))
         
-        print('cnt', cnt)
-        print('all_cnt', all_cnt)
+    @classmethod
+    def from_config(cls, cfg, input_shape):
+        ret = {
+            "loss_weight": cfg.MODEL.ROI_KEYPOINT_HEAD.LOSS_WEIGHT,
+            "num_keypoints": cfg.MODEL.ROI_KEYPOINT_HEAD.NUM_KEYPOINTS,
+        }
 
-        print('tweaked final score 1', _F_PCK_SCORE1/cnt)
-        print('tweaked final score 2', _F_PCK_SCORE2/cnt)
-        #print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
-        #print('First 5 ', _BEST_3D_PRED_POSES[0:5])
+        #2nd model
+        #self.model2 = cfg.model2
+        #self.optimizer2 = cfg.optimizer2
 
-        def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
-            p = self.params
-            iStr = ' {:<18} {} @[ IoU={:<9} | area={:>6s} | maxDets={:>3d} ] = {:0.3f}'
-            titleStr = 'Average Precision' if ap == 1 else 'Average Recall'
-            typeStr = '(AP)' if ap==1 else '(AR)'
-            iouStr = '{:0.2f}:{:0.2f}'.format(p.iouThrs[0], p.iouThrs[-1]) \
-                if iouThr is None else '{:0.2f}'.format(iouThr)
-
-            aind = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng]
-            mind = [i for i, mDet in enumerate(p.maxDets) if mDet == maxDets]
-            if ap == 1:
-                # dimension of precision: [TxRxKxAxM]
-                s = self.eval['precision']
-                # IoU
-                if iouThr is not None:
-                    t = np.where(iouThr == p.iouThrs)[0]
-                    s = s[t]
-                s = s[:,:,:,aind,mind]
-            else:
-                # dimension of recall: [TxKxAxM]
-                s = self.eval['recall']
-                if iouThr is not None:
-                    t = np.where(iouThr == p.iouThrs)[0]
-                    s = s[t]
-                s = s[:,:,aind,mind]
-            if len(s[s>-1])==0:
-                mean_s = -1
-            else:
-                mean_s = np.mean(s[s>-1])
-            print(iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s))
-            return mean_s
-        def _summarizeDets():
-            stats = np.zeros((12,))
-            stats[0] = _summarize(1)
-            stats[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[2])
-            stats[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[2])
-            stats[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[2])
-            stats[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[2])
-            stats[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
-            stats[6] = _summarize(0, maxDets=self.params.maxDets[0])
-            stats[7] = _summarize(0, maxDets=self.params.maxDets[1])
-            stats[8] = _sdisplay.clear_output(wait=True)ummarize(0, maxDets=self.params.maxDets[2])
-            stats[9] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
-            stats[10] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
-            stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
-            return stats
-        def _summarizeKps():
-            stats = np.zeros((10,))
-            stats[0] = _summarize(1, maxDets=20)
-            stats[1] = _summarize(1, maxDets=20, iouThr=.5)
-            stats[2] = _summarize(1, maxDets=20, iouThr=.75)
-            stats[3] = _summarize(1, maxDets=20, areaRng='medium')
-            stats[4] = _summarize(1, maxDets=20, areaRng='large')
-            stats[5] = _summarize(0, maxDets=20)
-            stats[6] = _summarize(0, maxDets=20, iouThr=.5)
-            stats[7] = _summarize(0, maxDets=20, iouThr=.75)
-            stats[8] = _summarize(0, maxDets=20, areaRng='medium')
-            stats[9] = _summarize(0, maxDets=20, areaRng='large')
-            return stats
-        if not self.eval:
-            raise Exception('Please run accumulate() first')
-        iouType = self.params.iouType
-        if iouType == 'segm' or iouType == 'bbox':
-            summarize = _summarizeDets
-        elif iouType == 'keypoints':
-            summarize = _summarizeKps
-        self.stats = summarize()
-
-    def __str__(self):
-        self.summarize()
-
-
-class Params:
-    '''
-    Params for coco evaluation api
-    '''
-    def setDetParams(self):
-        self.imgIds = []
-        self.catIds = []
-        # np.arange causes trouble.  the data point on arange is slightly larger than the true value
-        self.iouThrs = np.linspace(.5, 0.95, int((0.95 - .5) / .05) + 1, endpoint=True)
-        self.recThrs = np.linspace(.0, 1.00, int((1.00 - .0) / .01) + 1, endpoint=True)
-        self.maxDets = [1, 10, 100]
-        self.areaRng = [[0 ** 2, 1e5 ** 2], [0 ** 2, 32 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
-        self.areaRngLbl = ['all', 'small', 'medium', 'large']
-        self.useCats = 1
-
-    def setKpParams(self):
-        self.imgIds = []
-        self.catIds = []
-        # np.arange causes trouble.  the data point on arange is slightly larger than the true value
-        self.iouThrs = np.linspace(.5, 0.95, int((0.95 - .5) / .05) + 1, endpoint=True)
-        self.recThrs = np.linspace(.0, 1.00, int((1.00 - .0) / .01) + 1, endpoint=True)
-        self.maxDets = [20]
-        self.areaRng = [[0 ** 2, 1e5 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
-        self.areaRngLbl = ['all', 'medium', 'large']
-        self.useCats = 1
-        self.kpt_oks_sigmas  = np.array([1.07, 1.07, 0.87, 0.87, 0.89, 0.89]) # divide by 10 #np.array([.9,.9,.9,.9,.9,.9])
-
-    def __init__(self, iouType='segm'):
-        if iouType == 'segm' or iouType == 'bbox':
-            self.setDetParams()
-        elif iouType == 'keypoints':
-            self.setKpParams()
+        normalize_by_visible = (
+            cfg.MODEL.ROI_KEYPOINT_HEAD.NORMALIZE_LOSS_BY_VISIBLE_KEYPOINTS
+        )  # noqa
+        if not normalize_by_visible:
+            batch_size_per_image = cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE
+            positive_sample_fraction = cfg.MODEL.ROI_HEADS.POSITIVE_FRACTION
+            ret["loss_normalizer"] = (
+                ret["num_keypoints"] * batch_size_per_image * positive_sample_fraction
+            )
         else:
-            raise Exception('iouType not supported')
-        self.iouType = iouType
-        # useSegm is deprecated
-        self.useSegm = None
+            ret["loss_normalizer"] = "visible"
+        return ret
+
+    def forward(self, x, instances: List[Instances]):
+        """
+        Args:
+            x: input region feature(s) provided by :class:`ROIHeads`.
+            instances (list[Instances]): contains the boxes & labels corresponding
+                to the input features.
+                Exact format is up to its caller to decide.
+                Typically, this is the foreground instances in training, with
+                "proposal_boxes" field and other gt annotations.
+                In inference, it contains boxes that are already predicted.
+        Returns:
+            A dict of losses if in training. The predicted "instances" if in inference.
+        """
+        x = self.layers(x)
+        if self.training:
+            num_images = len(instances)
+            normalizer = (
+                None if self.loss_normalizer == "visible" else num_images * self.loss_normalizer
+            )
+            return {
+                "loss_keypoint": keypoint_rcnn_loss(x, instances, normalizer=normalizer)
+                * self.loss_weight
+            } #self.model2, self.optimizer2
+        else:
+            keypoint_rcnn_inference(x, instances)
+            return instances
+
+    def layers(self, x):
+        """
+        Neural network layers that makes predictions from regional input features.
+        """
+        raise NotImplementedError
+
+
+@ROI_KEYPOINT_HEAD_REGISTRY.register()
+class KRCNNConvDeconvUpsampleHead(BaseKeypointRCNNHead):
+    """
+    A standard keypoint head containing a series of 3x3 convs, followed by
+    a transpose convolution and bilinear interpolation for upsampling.
+    """
+
+    @configurable
+    def __init__(self, input_shape, *, num_keypoints, conv_dims, **kwargs):
+        """
+        NOTE: this interface is experimental.
+        Args:
+            input_shape (ShapeSpec): shape of the input feature
+            conv_dims: an iterable of output channel counts for each conv in the head
+                         e.g. (512, 512, 512) for three convs outputting 512 channels.
+        """
+        super().__init__(num_keypoints=num_keypoints, **kwargs)
+
+        # default up_scale to 2 (this can be made an option)
+        up_scale = 2
+        in_channels = input_shape.channels
+
+        self.blocks = []
+        for idx, layer_channels in enumerate(conv_dims, 1):
+            module = Conv2d(in_channels, layer_channels, 3, stride=1, padding=1)
+            self.add_module("conv_fcn{}".format(idx), module)
+            self.blocks.append(module)
+            in_channels = layer_channels
+
+        deconv_kernel = 4
+        self.score_lowres = ConvTranspose2d(
+            in_channels, num_keypoints, deconv_kernel, stride=2, padding=deconv_kernel // 2 - 1
+        )
+        self.up_scale = up_scale
+
+        for name, param in self.named_parameters():
+            if "bias" in name:
+                nn.init.constant_(param, 0)
+            elif "weight" in name:
+                pass
+                # Caffe2 implementation uses MSRAFill, which in fact
+                # corresponds to kaiming_normal_ in PyTorch
+                nn.init.kaiming_normal_(param, mode="fan_out", nonlinearity="relu")
+                #nn.init.uniform_(param, 0, 1)
+
+    @classmethod
+    def from_config(cls, cfg, input_shape):
+        ret = super().from_config(cfg, input_shape)
+        ret["input_shape"] = input_shape
+        ret["conv_dims"] = cfg.MODEL.ROI_KEYPOINT_HEAD.CONV_DIMS
+        return ret
+
+    def layers(self, x):
+        for layer in self.blocks:
+            x = F.relu(layer(x))
+        x = self.score_lowres(x)
+        x = interpolate(x, scale_factor=self.up_scale, mode="bilinear", align_corners=False)
+        return x
+
