@@ -458,6 +458,9 @@ class COCOeval:
         #mean detection
         mean_dt = DT.mean(dim=0) 
         mean_dt = torch.Tensor(mean_dt).view(1,-1)
+        mean_dt = (mean_dt * std_3d) + mean_3d #return to global dt for evaluation 
+        print('sample mean', mean_dt[0][0:5])
+
         score_3d_mean = self.pck(GT, mean_dt)
         loss_mean = torch.nn.functional.mse_loss(GT, mean_dt)
         target = GT.view(3,6); pred = mean_dt.view(3,6)
@@ -466,6 +469,9 @@ class COCOeval:
         #median detection
         med_dt = DT.median(dim=0)[0] 
         med_dt = torch.Tensor(med_dt).view(1,-1)
+        med_dt = (med_dt * std_3d) + mean_3d #return to global dt for evaluation 
+        print('sample median', med_dt[0][0:5])
+
         score_3d_med = self.pck(GT, med_dt)
         loss_med = torch.nn.functional.mse_loss(GT, med_dt)
         target = GT.view(3,6); pred = med_dt.view(3,6)
