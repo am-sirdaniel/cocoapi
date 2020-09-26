@@ -9,7 +9,7 @@ import copy
 import torch
 from IPython import display
 
-_F_PCK_SCORE = 0
+_F_PCK_SCORE1, _F_PCK_SCORE2 = 0,0
 _BEST_3D_PRED_POSES = []
 all_cnt = 0
 cnt = 0
@@ -174,9 +174,9 @@ class COCOeval:
         evaluateImg = self.evaluateImg
         maxDet = p.maxDets[-1]
 
-        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
+        global _F_PCK_SCORE1, _F_PCK_SCORE2, _BEST_3D_PRED_POSES, cnt, all_cnt
 
-        _F_PCK_SCORE = 0
+        _F_PCK_SCORE1, _F_PCK_SCORE2 = 0,0
         _BEST_3D_PRED_POSES = []
         all_cnt = 0
         cnt = 0
@@ -192,11 +192,13 @@ class COCOeval:
         print('-------------  Outside evaluateImg function (variables resetted)  ---------------')
 
         print('len evaluated images: ', len(self.evalImgs ))
-        print('_F_PCK_SCORE: ', _F_PCK_SCORE)
+        print('_F_PCK_SCORE1: ', _F_PCK_SCORE1)
+        print('_F_PCK_SCORE2: ', _F_PCK_SCORE2)
         #print('len(_BEST_3D_PRED_POSES): ', len(_BEST_3D_PRED_POSES))
         print('cnt: ', cnt)
         print('all_cnt: ', all_cnt)
-        print('Joe proposed Score: ', _F_PCK_SCORE/cnt)
+        print('Joe proposed Score 1: ', _F_PCK_SCORE1/cnt)
+        print('Joe proposed Score 2: ', _F_PCK_SCORE2/cnt)
 
         
         print('len p.imgIds: ', len(p.imgIds))
@@ -449,66 +451,93 @@ class COCOeval:
         least_error_3d = float('inf')
         #all_nan = torch.isnan(GT)
 
-        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
+        global _F_PCK_SCORE1, _F_PCK_SCORE2, _BEST_3D_PRED_POSES, cnt, all_cnt
 
-        # for i, dt_2d in DT_2d:
+        DT = torch.Tensor(DT)
+
+        #mean detection
+        mean_dt = DT.mean(dim=0) 
+        mean_dt = torch.Tensor(mean_dt).view(1,-1)
+        score_3d_mean = self.pck(GT, mean_dt)
+        loss_mean = torch.nn.functional.mse_loss(GT, mean_dt)
+        target = GT.view(3,6); pred = mean_dt.view(3,6)
+        error_3d_mean = self.mpjpe_error(target, pred)
+
+        #median detection
+        med_dt = DT.median(dim=0)[0] 
+        med_dt = torch.Tensor(med_dt).view(1,-1)
+        score_3d_med = self.pck(GT, med_dt)
+        loss_med = torch.nn.functional.mse_loss(GT, med_dt)
+        target = GT.view(3,6); pred = med_dt.view(3,6)
+        error_3d_med = self.mpjpe_error(target, pred)
+
+        print('mean 3d error in {} instances'.format(len(DT)), error_3d_mean)
+        print('correspodning 3d PCK score in {} instances'.format(len(DT)), score_3d_mean)
+        print('loss mean: ', loss_mean)
+
+        print('median 3d error in {} instances'.format(len(DT)), error_3d_med)
+        print('correspodning 3d PCK score in {} instances'.format(len(DT)), score_3d_med)
+        print('loss median: ', loss_med)
+
+        _F_PCK_SCORE1 += score_3d_mean
+        _F_PCK_SCORE2 += score_3d_med
+        #_BEST_3D_PRED_POSES.append(best_3d)
+        cnt+=1
+
+        # for i, (dt_, dt_2d) in enumerate(zip(DT, DT_2d)):
+        # #for i, dt_ in enumerate(DT):
+        #     dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
+        #     dt_g = torch.Tensor(dt_).view(1,-1)
+
+        #     #consider only valid
+        #     print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
+
+        #     score_3d = self.pck(GT, dt_g)
+        #     score_2d = self.pck(GT_2d, dt_2d)
+        #     #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
+        #     loss = torch.nn.functional.mse_loss(dt_, GT)
+        #     loss_2 = torch.nn.functional.mse_loss(GT_2d, dt_2d)
+
+        #     target = GT.view(3,6); pred = dt_.view(3,6)
+        #     error_3d = self.mpjpe_error(target, pred)
+
         #     target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
-        #     error = self.mpjpe_error(target, pred)
+        #     error_2d = self.mpjpe_error(target, pred)
 
-        for i, (dt_, dt_2d) in enumerate(zip(DT, DT_2d)):
-        #for i, dt_ in enumerate(DT):
-            dt_ = (dt_ * std_3d) + mean_3d #return to global dt for evaluation 
-            dt_g = torch.Tensor(dt_).view(1,-1)
+        #     print(i, 'pck score on 2d', score_2d)
+        #     print(i, 'pck score on 3d', score_3d)
+        #     print(i, 'mse loss 3d', loss)
+        #     print(i, 'mse loss 2d', loss_2)
+        #     print(i, 'mpjpe 3d error', error_3d)
+        #     print(i, 'mpjpe 2d error', error_2d)
 
-            #consider only valid
-            print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
+        #     all_cnt+=1
 
-            score_3d = self.pck(GT, dt_g)
-            score_2d = self.pck(GT_2d, dt_2d)
-            #loss = torch.nn.functional.mse_loss(dt_g[~all_nan], GT[~all_nan])
-            loss = torch.nn.functional.mse_loss(dt_, GT)
-            loss_2 = torch.nn.functional.mse_loss(GT_2d, dt_2d)
+        #     #corresponding 3D detected using best 2D
+        #     # if score_2d > best_score_2d:
+        #     #     print('yes')
+        #     #     best_score_2d = score_2d
+        #     #     best_pred_2d = dt_2d
+        #     #     best_index = i
+        #     #     best_score_3d = score_3d
+        #     #     best_3d = dt_g
+        #     #     report_error_3d = error_3d
+        #     #     report_error_2d = error_2d
+        #     #     best_loss = loss
+        #     #     best_loss_2 = loss_2
 
-            target = GT.view(3,6); pred = dt_.view(3,6)
-            error_3d = self.mpjpe_error(target, pred)
+        #     #3D best
+        #     if error_3d < least_error_3d:
+        #         least_error_3d = error_3d
+        #         best_index = i
+        #         best_score_3d = score_3d
+        #         best_3d = dt_g
 
-            target = GT_2d.view(3,6); pred = dt_2d.view(3,6)
-            error_2d = self.mpjpe_error(target, pred)
-
-            print(i, 'pck score on 2d', score_2d)
-            print(i, 'pck score on 3d', score_3d)
-            print(i, 'mse loss 3d', loss)
-            print(i, 'mse loss 2d', loss_2)
-            print(i, 'mpjpe 3d error', error_3d)
-            print(i, 'mpjpe 2d error', error_2d)
-
-            all_cnt+=1
-
-            #corresponding 3D detected using best 2D
-            # if score_2d > best_score_2d:
-            #     print('yes')
-            #     best_score_2d = score_2d
-            #     best_pred_2d = dt_2d
-            #     best_index = i
-            #     best_score_3d = score_3d
-            #     best_3d = dt_g
-            #     report_error_3d = error_3d
-            #     report_error_2d = error_2d
-            #     best_loss = loss
-            #     best_loss_2 = loss_2
-
-            #3D best
-            if error_3d < least_error_3d:
-                least_error_3d = error_3d
-                best_index = i
-                best_score_3d = score_3d
-                best_3d = dt_g
-
-                #report_error_3d = error_3d
-                report_error_2d = error_2d
+        #         #report_error_3d = error_3d
+        #         report_error_2d = error_2d
                 
-                best_loss = loss
-                best_loss_2 = loss_2
+        #         best_loss = loss
+        #         best_loss_2 = loss_2
 
             
 
@@ -516,16 +545,16 @@ class COCOeval:
             #     best_score = score
             #     best_pred = dt_g
 
-        print('selected least 3d error in {} instances'.format(len(DT)), least_error_3d)
-        print('correspodning 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
-        print('correspodning 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
-        #print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
-        print('loss 3d: ', best_loss)
-        print('loss 2d : ', best_loss_2)
+        # print('selected least 3d error in {} instances'.format(len(DT)), least_error_3d)
+        # print('correspodning 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
+        # print('correspodning 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
+        # #print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
+        # print('loss 3d: ', best_loss)
+        # print('loss 2d : ', best_loss_2)
 
-        _F_PCK_SCORE += best_score_3d
-        _BEST_3D_PRED_POSES.append(best_3d)
-        cnt+=1
+        # _F_PCK_SCORE += best_score_3d
+        # _BEST_3D_PRED_POSES.append(best_3d)
+        # cnt+=1
 
         print(f'cnt:{cnt} all_cnt:{all_cnt}')
 
@@ -664,15 +693,18 @@ class COCOeval:
         Note this functin can *only* be applied on the default parameter setting
         '''
         display.clear_output(wait=True)
-        
+
         #3D Evaluation Final Score
-        global _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
-        print('_F_PCK_SCORE', _F_PCK_SCORE)
+        global _F_PCK_SCORE1, _F_PCK_SCORE2, _BEST_3D_PRED_POSES, cnt, all_cnt
+        print('_F_PCK_SCORE1', _F_PCK_SCORE1)
+        print('_F_PCK_SCORE2', _F_PCK_SCORE2)
+        
         print('cnt', cnt)
         print('all_cnt', all_cnt)
 
-        print('tweaked final score', _F_PCK_SCORE/cnt)
-        print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
+        print('tweaked final score 1', _F_PCK_SCORE1/cnt)
+        print('tweaked final score 2', _F_PCK_SCORE2/cnt)
+        #print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
         #print('First 5 ', _BEST_3D_PRED_POSES[0:5])
 
         def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
