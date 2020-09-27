@@ -700,11 +700,14 @@ class COCOeval:
         Compute and display summary metrics for evaluation results.
         Note this functin can *only* be applied on the default parameter setting
         '''
-        if cnt > 10:
-            display.clear_output(wait=True)
+        
 
         #3D Evaluation Final Score
         global _F_PCK_SCORE1, _F_PCK_SCORE2,_F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
+        
+        if cnt > 10:
+            display.clear_output(wait=True)
+
         print('_F_PCK_SCORE1', _F_PCK_SCORE1)
         print('_F_PCK_SCORE2', _F_PCK_SCORE2)
         print('_F_PCK_SCORE', _F_PCK_SCORE)
