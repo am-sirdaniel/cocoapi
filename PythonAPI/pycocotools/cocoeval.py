@@ -410,6 +410,21 @@ class COCOeval:
         print('GT 3d shape', GT.shape)
         print('DT 3d shape', DT.shape)
 
+        if torch.sum(torch.isnan(GT)):
+            return {
+                'image_id':     imgId,
+                'category_id':  catId,
+                'aRng':         aRng,
+                'maxDet':       maxDet,
+                'dtIds':        [d['id'] for d in dt],
+                'gtIds':        [g['id'] for g in gt],
+                'dtMatches':    dtm,
+                'gtMatches':    gtm,
+                'dtScores':     [d['score'] for d in dt],
+                'gtIgnore':     gtIg,
+                'dtIgnore':     dtIg,
+            }
+
         print(gt[0])
         print(dt[0])
 
@@ -557,8 +572,8 @@ class COCOeval:
         print('max 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
         print('max 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
         #print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
-        print('max loss 3d: ', best_loss)
-        print('max loss 2d : ', best_loss_2)
+        #print('max loss 3d: ', best_loss)
+        #print('max loss 2d : ', best_loss_2)
 
         _F_PCK_SCORE += best_score_3d
         #_BEST_3D_PRED_POSES.append(best_3d)
