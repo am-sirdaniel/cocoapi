@@ -730,9 +730,9 @@ class COCOeval:
         print('cnt', cnt)
         print('all_cnt', all_cnt)
 
-        print('tweaked final score 1', _F_PCK_SCORE1/cnt)
-        print('tweaked final score 2', _F_PCK_SCORE2/cnt)
-        print('tweaked max final score', _F_PCK_SCORE/cnt)
+        print('final score 1', _F_PCK_SCORE1/cnt)
+        print('final score 2', _F_PCK_SCORE2/cnt)
+        print('max final score', _F_PCK_SCORE/cnt)
 
         #print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
         #print('First 5 ', _BEST_3D_PRED_POSES[0:5])
