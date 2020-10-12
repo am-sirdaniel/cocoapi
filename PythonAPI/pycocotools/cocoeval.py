@@ -10,11 +10,14 @@ import torch
 from IPython import display
 
 _F_PCK_SCORE1, _F_PCK_SCORE2,_F_PCK_SCORE = 0,0,0
+_F_PCK_SCORE1_500, _F_PCK_SCORE1_1k = 0,0
+_F_PCK_SCORE2_500, _F_PCK_SCORE2_1k = 0,0
+
 _BEST_3D_PRED_POSES = []
 all_cnt = 0
 cnt = 0
 
-print('*************** Pycoco cocoeval script *****************')
+print('*************** Pycoco cocoeval script (Can I see UPDATE on GCP??) *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
@@ -175,8 +178,13 @@ class COCOeval:
         maxDet = p.maxDets[-1]
 
         global _F_PCK_SCORE1, _F_PCK_SCORE2,_F_PCK_SCORE,_BEST_3D_PRED_POSES, cnt, all_cnt
+        global _F_PCK_SCORE1_500, _F_PCK_SCORE1_1k
+        global _F_PCK_SCORE2_500, _F_PCK_SCORE2_1k
 
         _F_PCK_SCORE1, _F_PCK_SCORE2, _F_PCK_SCORE = 0,0, 0
+        _F_PCK_SCORE1_500, _F_PCK_SCORE1_1k = 0,0
+        _F_PCK_SCORE2_500, _F_PCK_SCORE2_1k = 0,0
+
         _BEST_3D_PRED_POSES = []
         all_cnt = 0
         cnt = 0
@@ -469,6 +477,8 @@ class COCOeval:
         #all_nan = torch.isnan(GT)
 
         global _F_PCK_SCORE1, _F_PCK_SCORE2, _F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
+        global _F_PCK_SCORE1_500, _F_PCK_SCORE1_1k
+        global _F_PCK_SCORE2_500, _F_PCK_SCORE2_1k
 
         DT = torch.Tensor(DT)
 
@@ -478,7 +488,7 @@ class COCOeval:
         mean_dt = (mean_dt * std_3d) + mean_3d #return to global dt for evaluation 
         print('sample mean', mean_dt[0][0:5])
 
-        score_3d_mean = self.pck(GT, mean_dt)
+        score_3d_mean = self.pck(GT, mean_dt, 100)
         loss_mean = torch.nn.functional.mse_loss(GT, mean_dt)
         target = GT.view(3,6); pred = mean_dt.view(3,6)
         error_3d_mean = self.mpjpe_error(target, pred)
@@ -489,7 +499,7 @@ class COCOeval:
         med_dt = (med_dt * std_3d) + mean_3d #return to global dt for evaluation 
         print('sample median', med_dt[0][0:5])
 
-        score_3d_med = self.pck(GT, med_dt)
+        score_3d_med = self.pck(GT, med_dt, 100)
         loss_med = torch.nn.functional.mse_loss(GT, med_dt)
         target = GT.view(3,6); pred = med_dt.view(3,6)
         error_3d_med = self.mpjpe_error(target, pred)
@@ -504,6 +514,12 @@ class COCOeval:
 
         _F_PCK_SCORE1 += score_3d_mean
         _F_PCK_SCORE2 += score_3d_med
+
+        _F_PCK_SCORE1_500 += self.pck(GT, mean_dt, 500)
+        _F_PCK_SCORE1_1k += self.pck(GT, mean_dt, 1000)
+
+        _F_PCK_SCORE2_500 = self.pck(GT, med_dt, 500)
+        _F_PCK_SCORE2_1k = self.pck(GT, med_dt, 1000)
         #_BEST_3D_PRED_POSES.append(best_3d)
         #cnt+=1
 
@@ -719,20 +735,28 @@ class COCOeval:
 
         #3D Evaluation Final Score
         global _F_PCK_SCORE1, _F_PCK_SCORE2,_F_PCK_SCORE, _BEST_3D_PRED_POSES, cnt, all_cnt
+        global _F_PCK_SCORE1_500, _F_PCK_SCORE1_1k
+        global _F_PCK_SCORE2_500, _F_PCK_SCORE2_1k
         
         if cnt > 10:
             display.clear_output(wait=True)
 
-        print('_F_PCK_SCORE1', _F_PCK_SCORE1)
-        print('_F_PCK_SCORE2', _F_PCK_SCORE2)
-        print('_F_PCK_SCORE', _F_PCK_SCORE)
+        print('_F_PCK_SCORE1 @100', _F_PCK_SCORE1)
+        print('_F_PCK_SCORE2 @100', _F_PCK_SCORE2)
+        print('_F_PCK_SCORE @100', _F_PCK_SCORE)
         
         print('cnt', cnt)
         print('all_cnt', all_cnt)
 
-        print('final score (mean)', _F_PCK_SCORE1/cnt)
-        print('final score (median)', _F_PCK_SCORE2/cnt)
+        print('final score (mean) @100', _F_PCK_SCORE1/cnt)
+        print('final score (median) @100', _F_PCK_SCORE2/cnt)
         print('final score (greedy)', _F_PCK_SCORE/cnt)
+
+        print('final score (mean) @ 500', _F_PCK_SCORE1_500/cnt)
+        print('final score (median) @ 500', _F_PCK_SCORE2_500/cnt)
+
+        print('final score (mean) @ 1k', _F_PCK_SCORE1_1k/cnt)
+        print('final score (median) @ 1k', _F_PCK_SCORE2_1k/cnt)
 
         #print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
         #print('First 5 ', _BEST_3D_PRED_POSES[0:5])
