@@ -8,6 +8,7 @@ from . import mask as maskUtils
 import copy
 import torch
 from IPython import display
+from datetime import datetime
 
 _F_PCK_SCORE1, _F_PCK_SCORE2,_F_PCK_SCORE = 0,0,0
 _F_PCK_SCORE1_500, _F_PCK_SCORE1_1k = 0,0
@@ -741,22 +742,49 @@ class COCOeval:
         if cnt > 10:
             display.clear_output(wait=True)
 
-        print('_F_PCK_SCORE1 @100', _F_PCK_SCORE1)
-        print('_F_PCK_SCORE2 @100', _F_PCK_SCORE2)
-        print('_F_PCK_SCORE @100', _F_PCK_SCORE)
+        # print('_F_PCK_SCORE1 @100', _F_PCK_SCORE1)
+        # print('_F_PCK_SCORE2 @100', _F_PCK_SCORE2)
+        # print('_F_PCK_SCORE @100', _F_PCK_SCORE)
         
-        print('cnt', cnt)
-        print('all_cnt', all_cnt)
+        # print('cnt', cnt)
+        # print('all_cnt', all_cnt)
 
-        print('final score (mean) @100', _F_PCK_SCORE1/cnt)
-        print('final score (median) @100', _F_PCK_SCORE2/cnt)
-        print('final score (greedy)', _F_PCK_SCORE/cnt)
+        # print('final score (mean) @100', _F_PCK_SCORE1/cnt)
+        # print('final score (median) @100', _F_PCK_SCORE2/cnt)
+        # print('final score (greedy)', _F_PCK_SCORE/cnt)
 
-        print('final score (mean) @ 500', _F_PCK_SCORE1_500/cnt)
-        print('final score (median) @ 500', _F_PCK_SCORE2_500/cnt)
+        # print('final score (mean) @ 500', _F_PCK_SCORE1_500/cnt)
+        # print('final score (median) @ 500', _F_PCK_SCORE2_500/cnt)
 
-        print('final score (mean) @ 1k', _F_PCK_SCORE1_1k/cnt)
-        print('final score (median) @ 1k', _F_PCK_SCORE2_1k/cnt)
+        # print('final score (mean) @ 1k', _F_PCK_SCORE1_1k/cnt)
+        # print('final score (median) @ 1k', _F_PCK_SCORE2_1k/cnt)
+
+        f = open("output.txt", "a")
+
+        
+        time = datetime.now().strftime("%Y%m%d-%H%M%S")
+        print(f"timestamp: {time}", file=f)
+        print(f"_F_PCK_SCORE1 @100 ={_F_PCK_SCORE1}", file=f)
+        print(f"_F_PCK_SCORE2 @100' ={_F_PCK_SCORE2}", file=f)
+        print(f"_F_PCK_SCORE @100' = {_F_PCK_SCORE}", file=f)
+        
+        print(f"cnt =  {cnt}", file=f)
+        print(f"all_cnt =  {all_cnt}", file=f)
+
+        print(f"final score (mean) @100 = {_F_PCK_SCORE1/cnt}", file=f)
+        print(f"final score (median) @100' = {_F_PCK_SCORE2/cnt}", file=f)
+        print(f"final score (greedy) = {_F_PCK_SCORE/cnt}", file=f)
+
+        print(f"final score (mean) @ 500' = {_F_PCK_SCORE1_500/cnt}", file=f)
+        print(f"final score (median) @ 500' =  {_F_PCK_SCORE2_500/cnt}", file=f)
+
+        print(f"final score (mean) @ 1k' = {_F_PCK_SCORE1_1k/cnt}", file=f)
+        print(f"final score (median) @ 1k' = {_F_PCK_SCORE2_1k/cnt}", file=f)
+        print(f"   ", file=f)
+        
+
+        #print(f"WER = {sum(wer_nums)/sum(wer_denoms)}", file=f)
+        f.close()
 
         #print('**********3D Final PCK score on {} images: {}************'.format(self.gt_cnt, _F_PCK_SCORE/self.gt_cnt))
         #print('First 5 ', _BEST_3D_PRED_POSES[0:5])
