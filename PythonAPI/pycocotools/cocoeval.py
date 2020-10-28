@@ -301,7 +301,7 @@ class COCOeval:
         #print(ious)
         return ious
 
-    def pck(self, target, pred, treshold=100):
+    def pck(self, target, pred, treshold):
         '''
         Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm/100mm)
 
@@ -516,11 +516,11 @@ class COCOeval:
         _F_PCK_SCORE1 += score_3d_mean
         _F_PCK_SCORE2 += score_3d_med
 
-        _F_PCK_SCORE1_500 += self.pck(GT, mean_dt, 500)
+        _F_PCK_SCORE1_500 += self.pck(GT, mean_dt, 500) #mean is 1
         _F_PCK_SCORE1_1k += self.pck(GT, mean_dt, 1000)
 
-        _F_PCK_SCORE2_500 = self.pck(GT, med_dt, 500)
-        _F_PCK_SCORE2_1k = self.pck(GT, med_dt, 1000)
+        _F_PCK_SCORE2_500 += self.pck(GT, med_dt, 500)
+        _F_PCK_SCORE2_1k += self.pck(GT, med_dt, 1000)
         #_BEST_3D_PRED_POSES.append(best_3d)
         #cnt+=1
 
@@ -744,7 +744,13 @@ class COCOeval:
 
         print('_F_PCK_SCORE1 @100', _F_PCK_SCORE1)
         print('_F_PCK_SCORE2 @100', _F_PCK_SCORE2)
-        print('_F_PCK_SCORE @100', _F_PCK_SCORE)
+        print('_F_PCK_SCORE greedy @100', _F_PCK_SCORE)
+
+        print('_F_PCK_SCORE1 @ 500', _F_PCK_SCORE1_500)
+        print('_F_PCK_SCORE1 @ 500', _F_PCK_SCORE2_500)
+
+        print('_F_PCK_SCORE1 @ 1k', _F_PCK_SCORE1_1k)
+        print('_F_PCK_SCORE1 @ 1k', _F_PCK_SCORE2_1k)
         
         print('cnt', cnt)
         print('all_cnt', all_cnt)
