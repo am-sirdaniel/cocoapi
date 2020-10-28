@@ -1,7 +1,7 @@
 __author__ = 'tsungyi'
 
 import numpy as np
-import datetime
+#import datetime
 import time
 from collections import defaultdict
 from . import mask as maskUtils
@@ -761,9 +761,11 @@ class COCOeval:
 
         f = open("/content/output.txt", "a")
 
-        
-        time = datetime.now().strftime("%Y%m%d-%H%M%S")
-        print(f"timestamp: {time}", file=f)
+        try:
+            time = datetime.now().strftime("%Y%m%d-%H%M%S")
+            print(f"timestamp: {time}", file=f)
+        except:
+            pass
         print(f"_F_PCK_SCORE1 @100 ={_F_PCK_SCORE1}", file=f)
         print(f"_F_PCK_SCORE2 @100' ={_F_PCK_SCORE2}", file=f)
         print(f"_F_PCK_SCORE @100' = {_F_PCK_SCORE}", file=f)
