@@ -301,7 +301,7 @@ class COCOeval:
         #print(ious)
         return ious
 
-    def pck(self, target, pred, treshold):
+    def pck(self, target, pred, threshold = 100):
         '''
         Percentage of Correct Keypoint for 3D pose Evaluation where PCKh @ 0.1m (10cm/100mm)
 
@@ -313,7 +313,7 @@ class COCOeval:
             pck_score: A scalar value btw 0 and 1
         '''
         diff = torch.abs(target - pred)
-        count = torch.sum(diff < treshold, dtype=torch.float)
+        count = torch.sum(diff < threshold, dtype=torch.float)
         pck_score = count/ (target.shape[0]*target.shape[1])
         return pck_score
 
