@@ -18,7 +18,7 @@ _BEST_3D_PRED_POSES = []
 all_cnt = 0
 cnt = 0
 
-print('*************** Pycoco cocoeval script (Can I see UPDATE on GCP3) *****************')
+print('*************** Pycoco cocoeval script (Can I see UPDATE on GCP??) *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
@@ -759,7 +759,7 @@ class COCOeval:
         print('final score (mean) @ 1k', _F_PCK_SCORE1_1k/cnt)
         print('final score (median) @ 1k', _F_PCK_SCORE2_1k/cnt)
 
-        f = open("output.txt", "a")
+        f = open("/content/output.txt", "a")
 
         
         time = datetime.now().strftime("%Y%m%d-%H%M%S")
