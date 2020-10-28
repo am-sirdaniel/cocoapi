@@ -1,14 +1,14 @@
 __author__ = 'tsungyi'
 
 import numpy as np
-#import datetime
+import datetime
 import time
 from collections import defaultdict
 from . import mask as maskUtils
 import copy
 import torch
 from IPython import display
-from datetime import datetime
+#from datetime import datetime
 
 _F_PCK_SCORE1, _F_PCK_SCORE2,_F_PCK_SCORE = 0,0,0
 _F_PCK_SCORE1_500, _F_PCK_SCORE1_1k = 0,0
@@ -762,7 +762,7 @@ class COCOeval:
         f = open("/content/output.txt", "a")
 
         try:
-            time = datetime.now().strftime("%Y%m%d-%H%M%S")
+            time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             print(f"timestamp: {time}", file=f)
         except:
             pass
