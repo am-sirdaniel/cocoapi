@@ -18,7 +18,7 @@ _BEST_3D_PRED_POSES = []
 all_cnt = 0
 cnt = 0
 
-print('*************** Pycoco cocoeval script (Can I see UPDATE on GCP2) *****************')
+print('*************** Pycoco cocoeval script (Can I see UPDATE on GCP??) *****************')
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
     #
@@ -131,16 +131,16 @@ class COCOeval:
         self.evalImgs = defaultdict(list)   # per-image per-category evaluation results
         self.eval     = {}                  # accumulated evaluation results
 
-        print('before prepare phase')
+        #print('before prepare phase')
 
         pose3d_gt = list(map(lambda x:x['pose_3d'], gts))
         pose3d_dt = list(map(lambda x:x['pred_3d_pts'], dts))
 
-        print('cocoeval pose3d_gt shape', torch.Tensor(pose3d_gt).shape)
-        print('cocoeval pose3d_gt sample', torch.Tensor(pose3d_gt)[0])
+        # print('cocoeval pose3d_gt shape', torch.Tensor(pose3d_gt).shape)
+        # print('cocoeval pose3d_gt sample', torch.Tensor(pose3d_gt)[0])
 
-        print('cocoeval pose3d_dt shape', torch.Tensor(pose3d_dt).shape)
-        print('cocoeval pose3d_dt sample', torch.Tensor(pose3d_dt)[0])
+        # print('cocoeval pose3d_dt shape', torch.Tensor(pose3d_dt).shape)
+        # print('cocoeval pose3d_dt sample', torch.Tensor(pose3d_dt)[0])
 
         self.gt_cnt = len(pose3d_gt)
 
@@ -190,7 +190,7 @@ class COCOeval:
         all_cnt = 0
         cnt = 0
 
-        print('what are these p.areaRng ? ', p.areaRng)
+        #print('what are these p.areaRng ? ', p.areaRng)
         self.evalImgs = [evaluateImg(imgId, catId, areaRng, maxDet)
                  for catId in catIds
                  for areaRng in p.areaRng
@@ -198,24 +198,24 @@ class COCOeval:
              ]
 
 
-        print('-------------  Outside evaluateImg function (variables resetted)  ---------------')
+        # print('-------------  Outside evaluateImg function (variables resetted)  ---------------')
 
-        print('len evaluated images: ', len(self.evalImgs ))
-        print('_F_PCK_SCORE1: ', _F_PCK_SCORE1)
-        print('_F_PCK_SCORE2: ', _F_PCK_SCORE2)
-        print('_F_PCK_SCORE: ', _F_PCK_SCORE)
-        #print('len(_BEST_3D_PRED_POSES): ', len(_BEST_3D_PRED_POSES))
-        print('cnt: ', cnt)
-        print('all_cnt: ', all_cnt)
-        print('Joe proposed Score 1: ', _F_PCK_SCORE1/cnt)
-        print('Joe proposed Score 2: ', _F_PCK_SCORE2/cnt)
-        print('Joe proposed max Score: ', _F_PCK_SCORE/cnt)
+        # print('len evaluated images: ', len(self.evalImgs ))
+        # print('_F_PCK_SCORE1: ', _F_PCK_SCORE1)
+        # print('_F_PCK_SCORE2: ', _F_PCK_SCORE2)
+        # print('_F_PCK_SCORE: ', _F_PCK_SCORE)
+        # #print('len(_BEST_3D_PRED_POSES): ', len(_BEST_3D_PRED_POSES))
+        # print('cnt: ', cnt)
+        # print('all_cnt: ', all_cnt)
+        # print('Joe proposed Score 1: ', _F_PCK_SCORE1/cnt)
+        # print('Joe proposed Score 2: ', _F_PCK_SCORE2/cnt)
+        # print('Joe proposed max Score: ', _F_PCK_SCORE/cnt)
 
         
-        print('len p.imgIds: ', len(p.imgIds))
-        print('len p.areaRng: ', len(p.areaRng))
-        print('len catIds: ', len(catIds))
-        print('----------------------------------------------------------------------------------')
+        # print('len p.imgIds: ', len(p.imgIds))
+        # print('len p.areaRng: ', len(p.areaRng))
+        # print('len catIds: ', len(catIds))
+        # print('----------------------------------------------------------------------------------')
 
         
 
@@ -338,11 +338,11 @@ class COCOeval:
         '''
         p = self.params
         catIds = p.catIds if p.useCats else [-1]
-        print('len p.imgIds: ', len(p.imgIds))
-        print('len p.areaRng: ', len(p.areaRng))
-        print('len catIds: ', len(catIds))
+        # print('len p.imgIds: ', len(p.imgIds))
+        # print('len p.areaRng: ', len(p.areaRng))
+        # print('len catIds: ', len(catIds))
 
-        print(f'imgId:{imgId}, catId:{catId}, aRng:{aRng}, maxDet:{maxDet}')
+        # print(f'imgId:{imgId}, catId:{catId}, aRng:{aRng}, maxDet:{maxDet}')
         if p.useCats:
             gt = self._gts[imgId,catId]
             dt = self._dts[imgId,catId]
@@ -363,9 +363,9 @@ class COCOeval:
         gt = [gt[i] for i in gtind]
         dtind = np.argsort([-d['score'] for d in dt], kind='mergesort')
 
-        print('dtind length, some example 2d scores', len(dtind), dtind[0:10])
+        #print('dtind length, some example 2d scores', len(dtind), dtind[0:10])
         dt = [dt[i] for i in dtind[0:maxDet]]
-        print('checking dt', dt[0:10])
+        #print('checking dt', dt[0:10])
 
         iscrowd = [int(o['iscrowd']) for o in gt]
         # load computed ious
@@ -379,14 +379,14 @@ class COCOeval:
         gtIg = np.array([g['_ignore'] for g in gt])
         dtIg = np.zeros((T,D))
 
-        print('len of dt and gt before for loops', len(dt), len(gt))
+        #print('len of dt and gt before for loops', len(dt), len(gt))
         if not len(ious)==0:
             for tind, t in enumerate(p.iouThrs):
-                print('tind, t', tind, t)
+                #print('tind, t', tind, t)
                 for dind, d in enumerate(dt):
                     # information about best match so far (m=-1 -> unmatched)
                     iou = min([t,1-1e-10])
-                    print('iou', iou)
+                    #print('iou', iou)
                     m   = -1
                     for gind, g in enumerate(gt):
                         # if this gt already matched, and not a crowd, continue
@@ -413,11 +413,11 @@ class COCOeval:
 
 
         ############ 3D Evaluation ###############################
-        print('performing 3D Evaluation')
+        #print('performing 3D Evaluation')
         GT  = torch.Tensor(list(map(lambda x:x['pose_3d'], gt)))
         DT  = torch.Tensor(list(map(lambda x:x['pred_3d_pts'], dt)))
-        print('GT 3d shape', GT.shape)
-        print('DT 3d shape', DT.shape)
+        #print('GT 3d shape', GT.shape)
+        #print('DT 3d shape', DT.shape)
 
         if torch.sum(torch.isnan(GT)):
             return {
@@ -434,13 +434,13 @@ class COCOeval:
                 'dtIgnore':     dtIg,
             }
 
-        print(gt[0])
-        print(dt[0])
+        #print(gt[0])
+        #print(dt[0])
 
         GT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], gt))) #(x,y, visibility)
         DT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], dt))) #(x,y,score)             
-        print('GT 2d shape', GT_2d.shape)
-        print('DT 2d shape', DT_2d.shape)
+        #print('GT 2d shape', GT_2d.shape)
+        #print('DT 2d shape', DT_2d.shape)
 
 
         #Normalize relative to the hip
@@ -448,7 +448,7 @@ class COCOeval:
         GT = GT.view(GT.shape[0], 6,3) #1,6,3
         midhip = (GT[:,0] + GT[:,1])/2
 
-        print('GT shape, midhip shape', GT.shape, midhip.unsqueeze(1).shape)
+        #print('GT shape, midhip shape', GT.shape, midhip.unsqueeze(1).shape)
         GT = GT - midhip.unsqueeze(1)
         #GT = GT.view(GT.shape[0], -1)
 
@@ -463,13 +463,13 @@ class COCOeval:
             160.7282, 160.8192, 163.5823, 152.6740]))
 
         
-        print('Global 3d GT sample in Evaluation: ', GT[0:5])
+        #print('Global 3d GT sample in Evaluation: ', GT[0:5])
 
-        print('last gt sample', GT[0])
-        print('last dt sample', DT[0])
-        print()
-        print('last gt shape', GT.shape)
-        print('last dt shape', DT.shape)
+        # print('last gt sample', GT[0])
+        # print('last dt sample', DT[0])
+        # print()
+        # print('last gt shape', GT.shape)
+        # print('last dt shape', DT.shape)
 
 
         best_score_3d = float('-inf')
@@ -487,7 +487,7 @@ class COCOeval:
         mean_dt = DT.mean(dim=0) 
         mean_dt = torch.Tensor(mean_dt).view(1,-1)
         mean_dt = (mean_dt * std_3d) + mean_3d #return to global dt for evaluation 
-        print('sample mean', mean_dt[0][0:5])
+        #print('sample mean', mean_dt[0][0:5])
 
         score_3d_mean = self.pck(GT, mean_dt, 100)
         loss_mean = torch.nn.functional.mse_loss(GT, mean_dt)
@@ -498,20 +498,20 @@ class COCOeval:
         med_dt = DT.median(dim=0)[0] 
         med_dt = torch.Tensor(med_dt).view(1,-1)
         med_dt = (med_dt * std_3d) + mean_3d #return to global dt for evaluation 
-        print('sample median', med_dt[0][0:5])
+        #print('sample median', med_dt[0][0:5])
 
         score_3d_med = self.pck(GT, med_dt, 100)
         loss_med = torch.nn.functional.mse_loss(GT, med_dt)
         target = GT.view(3,6); pred = med_dt.view(3,6)
         error_3d_med = self.mpjpe_error(target, pred)
 
-        print('mean 3d error in {} instances'.format(len(DT)), error_3d_mean)
-        print('correspodning 3d PCK score in {} instances'.format(len(DT)), score_3d_mean)
-        print('loss mean: ', loss_mean)
+        # print('mean 3d error in {} instances'.format(len(DT)), error_3d_mean)
+        # print('correspodning 3d PCK score in {} instances'.format(len(DT)), score_3d_mean)
+        # print('loss mean: ', loss_mean)
 
-        print('median 3d error in {} instances'.format(len(DT)), error_3d_med)
-        print('correspodning 3d PCK score in {} instances'.format(len(DT)), score_3d_med)
-        print('loss median: ', loss_med)
+        # print('median 3d error in {} instances'.format(len(DT)), error_3d_med)
+        # print('correspodning 3d PCK score in {} instances'.format(len(DT)), score_3d_med)
+        # print('loss median: ', loss_med)
 
         _F_PCK_SCORE1 += score_3d_mean
         _F_PCK_SCORE2 += score_3d_med
@@ -530,7 +530,7 @@ class COCOeval:
             dt_g = torch.Tensor(dt_).view(1,-1)
 
             #consider only valid
-            print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
+            #print('GT type, dt type, gt shape, dt_ shape', type(GT), type(dt_g), GT.shape, dt_g.shape)
 
             score_3d = self.pck(GT, dt_g)
             score_2d = self.pck(GT_2d, dt_2d)
@@ -585,9 +585,9 @@ class COCOeval:
             #     best_score = score
             #     best_pred = dt_g
 
-        print('max least 3d error in {} instances'.format(len(DT)), least_error_3d)
-        print('max 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
-        print('max 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
+        #print('max least 3d error in {} instances'.format(len(DT)), least_error_3d)
+        #print('max 3d PCK score in {} instances'.format(len(DT)), best_score_3d)
+        #print('max 2d mpjpe error in {} instances'.format(len(DT)), report_error_2d)
         #print('correspodning 3d mpjpe error in {} instances'.format(len(DT)), report_error_3d)
         #print('max loss 3d: ', best_loss)
         #print('max loss 2d : ', best_loss_2)
@@ -596,7 +596,7 @@ class COCOeval:
         #_BEST_3D_PRED_POSES.append(best_3d)
         cnt+=1
 
-        print(f'cnt:{cnt} all_cnt:{all_cnt}')
+        #print(f'cnt:{cnt} all_cnt:{all_cnt}')
 
         #print('3D pck score for this image: {}', report_error_3d)
 
@@ -636,7 +636,7 @@ class COCOeval:
         A           = len(p.areaRng)
         M           = len(p.maxDets)
 
-        print('T, R, K,A, M', T, R, K,A, M)
+        #print('T, R, K,A, M', T, R, K,A, M)
 
         precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
         recall      = -np.ones((T,K,A,M))
@@ -742,22 +742,22 @@ class COCOeval:
         if cnt > 10:
             display.clear_output(wait=True)
 
-        # print('_F_PCK_SCORE1 @100', _F_PCK_SCORE1)
-        # print('_F_PCK_SCORE2 @100', _F_PCK_SCORE2)
-        # print('_F_PCK_SCORE @100', _F_PCK_SCORE)
+        print('_F_PCK_SCORE1 @100', _F_PCK_SCORE1)
+        print('_F_PCK_SCORE2 @100', _F_PCK_SCORE2)
+        print('_F_PCK_SCORE @100', _F_PCK_SCORE)
         
-        # print('cnt', cnt)
-        # print('all_cnt', all_cnt)
+        print('cnt', cnt)
+        print('all_cnt', all_cnt)
 
-        # print('final score (mean) @100', _F_PCK_SCORE1/cnt)
-        # print('final score (median) @100', _F_PCK_SCORE2/cnt)
-        # print('final score (greedy)', _F_PCK_SCORE/cnt)
+        print('final score (mean) @100', _F_PCK_SCORE1/cnt)
+        print('final score (median) @100', _F_PCK_SCORE2/cnt)
+        print('final score (greedy)', _F_PCK_SCORE/cnt)
 
-        # print('final score (mean) @ 500', _F_PCK_SCORE1_500/cnt)
-        # print('final score (median) @ 500', _F_PCK_SCORE2_500/cnt)
+        print('final score (mean) @ 500', _F_PCK_SCORE1_500/cnt)
+        print('final score (median) @ 500', _F_PCK_SCORE2_500/cnt)
 
-        # print('final score (mean) @ 1k', _F_PCK_SCORE1_1k/cnt)
-        # print('final score (median) @ 1k', _F_PCK_SCORE2_1k/cnt)
+        print('final score (mean) @ 1k', _F_PCK_SCORE1_1k/cnt)
+        print('final score (median) @ 1k', _F_PCK_SCORE2_1k/cnt)
 
         f = open("output.txt", "a")
 
