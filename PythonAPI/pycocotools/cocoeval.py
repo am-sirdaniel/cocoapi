@@ -516,11 +516,11 @@ class COCOeval:
         _F_PCK_SCORE1 += score_3d_mean
         _F_PCK_SCORE2 += score_3d_med
 
-        _F_PCK_SCORE1_500 += self.pck(GT, mean_dt, 500) #mean is 1
-        _F_PCK_SCORE1_1k += self.pck(GT, mean_dt, 1000)
+        _F_PCK_SCORE1_500 += self.pck(GT, mean_dt, 250) #mean is 1
+        _F_PCK_SCORE1_1k += self.pck(GT, mean_dt, 500)
 
-        _F_PCK_SCORE2_500 += self.pck(GT, med_dt, 500)
-        _F_PCK_SCORE2_1k += self.pck(GT, med_dt, 1000)
+        _F_PCK_SCORE2_500 += self.pck(GT, med_dt, 250)
+        _F_PCK_SCORE2_1k += self.pck(GT, med_dt, 500)
         #_BEST_3D_PRED_POSES.append(best_3d)
         #cnt+=1
 
@@ -746,11 +746,11 @@ class COCOeval:
         print('_F_PCK_SCORE2 @100', _F_PCK_SCORE2)
         print('_F_PCK_SCORE greedy @100', _F_PCK_SCORE)
 
-        print('_F_PCK_SCORE1 @ 500', _F_PCK_SCORE1_500)
-        print('_F_PCK_SCORE1 @ 500', _F_PCK_SCORE2_500)
+        print('_F_PCK_SCORE1 @ 250', _F_PCK_SCORE1_500)
+        print('_F_PCK_SCORE1 @ 250', _F_PCK_SCORE2_500)
 
-        print('_F_PCK_SCORE1 @ 1k', _F_PCK_SCORE1_1k)
-        print('_F_PCK_SCORE1 @ 1k', _F_PCK_SCORE2_1k)
+        print('_F_PCK_SCORE1 @ 500', _F_PCK_SCORE1_1k)
+        print('_F_PCK_SCORE1 @ 500', _F_PCK_SCORE2_1k)
         
         print('cnt', cnt)
         print('all_cnt', all_cnt)
@@ -759,11 +759,11 @@ class COCOeval:
         print('final score (median) @100', _F_PCK_SCORE2/cnt)
         print('final score (greedy)', _F_PCK_SCORE/cnt)
 
-        print('final score (mean) @ 500', _F_PCK_SCORE1_500/cnt)
-        print('final score (median) @ 500', _F_PCK_SCORE2_500/cnt)
+        print('final score (mean) @ 250', _F_PCK_SCORE1_500/cnt)
+        print('final score (median) @ 250', _F_PCK_SCORE2_500/cnt)
 
-        print('final score (mean) @ 1k', _F_PCK_SCORE1_1k/cnt)
-        print('final score (median) @ 1k', _F_PCK_SCORE2_1k/cnt)
+        print('final score (mean) @ 500', _F_PCK_SCORE1_1k/cnt)
+        print('final score (median) @ 500', _F_PCK_SCORE2_1k/cnt)
 
         f = open("/content/output.txt", "a")
 
@@ -783,11 +783,11 @@ class COCOeval:
         print(f"final score (median) @100' = {_F_PCK_SCORE2/cnt}", file=f)
         print(f"final score (greedy) = {_F_PCK_SCORE/cnt}", file=f)
 
-        print(f"final score (mean) @ 500' = {_F_PCK_SCORE1_500/cnt}", file=f)
-        print(f"final score (median) @ 500' =  {_F_PCK_SCORE2_500/cnt}", file=f)
+        print(f"final score (mean) @ 250' = {_F_PCK_SCORE1_500/cnt}", file=f)
+        print(f"final score (median) @ 250' =  {_F_PCK_SCORE2_500/cnt}", file=f)
 
-        print(f"final score (mean) @ 1k' = {_F_PCK_SCORE1_1k/cnt}", file=f)
-        print(f"final score (median) @ 1k' = {_F_PCK_SCORE2_1k/cnt}", file=f)
+        print(f"final score (mean) @ 500' = {_F_PCK_SCORE1_1k/cnt}", file=f)
+        print(f"final score (median) @ 500' = {_F_PCK_SCORE2_1k/cnt}", file=f)
         print(f"   ", file=f)
         
 
