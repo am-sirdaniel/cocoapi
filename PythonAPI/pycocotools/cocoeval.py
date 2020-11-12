@@ -500,6 +500,19 @@ class COCOeval:
         med_dt = (med_dt * std_3d) + mean_3d #return to global dt for evaluation 
         #print('sample median', med_dt[0][0:5])
 
+        #plot 3d median dt and GT
+        fig=plt.figure(figsize=(20, 5), dpi= 80, facecolor='w', edgecolor='k')
+        axes=fig.subplots(1,6)
+
+        axs=[]
+        f = plt.figure(figsize=(10,10))
+        axs.append(f.add_subplot(2,3,1, projection='3d'))
+        axs.append(f.add_subplot(2,3,2, projection='3d'))
+        axs.append(f.add_subplot(2,3,3, projection='3d'))
+
+        
+
+
         score_3d_med = self.pck(GT, med_dt, 100)
         loss_med = torch.nn.functional.mse_loss(GT, med_dt)
         target = GT.view(3,6); pred = med_dt.view(3,6)
