@@ -501,14 +501,14 @@ class COCOeval:
         #print('sample median', med_dt[0][0:5])
 
         #plot 3d median dt and GT
-        fig=plt.figure(figsize=(20, 5), dpi= 80, facecolor='w', edgecolor='k')
-        axes=fig.subplots(1,6)
+        # fig=plt.figure(figsize=(20, 5), dpi= 80, facecolor='w', edgecolor='k')
+        # axes=fig.subplots(1,6)
 
-        axs=[]
-        f = plt.figure(figsize=(10,10))
-        axs.append(f.add_subplot(2,3,1, projection='3d'))
-        axs.append(f.add_subplot(2,3,2, projection='3d'))
-        axs.append(f.add_subplot(2,3,3, projection='3d'))
+        # axs=[]
+        # f = plt.figure(figsize=(10,10))
+        # axs.append(f.add_subplot(2,3,1, projection='3d'))
+        # axs.append(f.add_subplot(2,3,2, projection='3d'))
+        # axs.append(f.add_subplot(2,3,3, projection='3d'))
 
         
 
