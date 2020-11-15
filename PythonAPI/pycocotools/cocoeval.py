@@ -518,8 +518,15 @@ class COCOeval:
 
         
 
+        print('*******before PCK***')
+        print('GT', GT)
+        print('med_dt', med_dt)
 
         score_3d_med = self.pck(GT, med_dt, 100)
+        print('score_3d_med', score_3d_med)
+        print()
+        print()
+
         loss_med = torch.nn.functional.mse_loss(GT, med_dt)
         target = GT.view(3,6); pred = med_dt.view(3,6)
         error_3d_med = self.mpjpe_error(target, pred)
