@@ -438,7 +438,13 @@ class COCOeval:
         #print(dt[0])
 
         GT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], gt))) #(x,y, visibility)
-        DT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], dt))) #(x,y,score)             
+        DT_2d  = torch.Tensor(list(map(lambda x:x['keypoints'], dt))) #(x,y,score)  
+        
+        print('GT_2d', GT_2d)
+        print()
+        print()
+        print('DT_2d', DT_2d)    
+
         #print('GT 2d shape', GT_2d.shape)
         #print('DT 2d shape', DT_2d.shape)
 
@@ -528,6 +534,7 @@ class COCOeval:
 
         _F_PCK_SCORE1 += score_3d_mean
         print('_F_PCK_SCORE1', _F_PCK_SCORE1)
+        print()
         _F_PCK_SCORE2 += score_3d_med
         print('_F_PCK_SCORE2', _F_PCK_SCORE2)
 
