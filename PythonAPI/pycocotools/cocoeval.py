@@ -527,7 +527,9 @@ class COCOeval:
         # print('loss median: ', loss_med)
 
         _F_PCK_SCORE1 += score_3d_mean
+        print('_F_PCK_SCORE1', _F_PCK_SCORE1)
         _F_PCK_SCORE2 += score_3d_med
+        print('_F_PCK_SCORE2', _F_PCK_SCORE2)
 
         _F_PCK_SCORE1_500 += self.pck(GT, mean_dt, 250) #mean is 1
         _F_PCK_SCORE1_1k += self.pck(GT, mean_dt, 500)
