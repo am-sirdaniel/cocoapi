@@ -518,14 +518,14 @@ class COCOeval:
 
         
 
-        print('*******before PCK***')
-        print('GT', GT)
-        print('med_dt', med_dt)
+        # print('*******before PCK***')
+        # print('GT', GT)
+        # print('med_dt', med_dt)
 
         score_3d_med = self.pck(GT, med_dt, 100)
-        print('score_3d_med', score_3d_med)
-        print()
-        print()
+        # print('score_3d_med', score_3d_med)
+        # print()
+        # print()
 
         loss_med = torch.nn.functional.mse_loss(GT, med_dt)
         target = GT.view(3,6); pred = med_dt.view(3,6)
@@ -540,10 +540,10 @@ class COCOeval:
         # print('loss median: ', loss_med)
 
         _F_PCK_SCORE1 += score_3d_mean
-        print('_F_PCK_SCORE1', _F_PCK_SCORE1)
-        print()
+        # print('_F_PCK_SCORE1', _F_PCK_SCORE1)
+        # print()
         _F_PCK_SCORE2 += score_3d_med
-        print('_F_PCK_SCORE2', _F_PCK_SCORE2)
+        # print('_F_PCK_SCORE2', _F_PCK_SCORE2)
 
         _F_PCK_SCORE1_500 += self.pck(GT, mean_dt, 250) #mean is 1
         _F_PCK_SCORE1_1k += self.pck(GT, mean_dt, 500)
